@@ -52,6 +52,14 @@ void MICROPY_WRAP_MP_SCHED_KEYBOARD_INTERRUPT(mp_sched_keyboard_interrupt)(void)
 }
 #endif
 
+#if MICROPY_RELOAD_EXCEPTION
+// This function may be called asynchronously at any time so only do the bare minimum.
+void MICROPY_WRAP_MP_SCHED_EXCEPTION(mp_sched_reload_interrupt)(void) {
+    MP_STATE_VM(mp_reload_exception).traceback_data = NULL;
+    mp_sched_exception(MP_OBJ_FROM_PTR(&MP_STATE_VM(mp_reload_exception)));
+}
+#endif
+
 #if MICROPY_ENABLE_VM_ABORT
 void MICROPY_WRAP_MP_SCHED_VM_ABORT(mp_sched_vm_abort)(void) {
     MP_STATE_VM(vm_abort) = true;

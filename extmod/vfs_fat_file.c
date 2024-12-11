@@ -59,10 +59,7 @@ const byte fresult_to_errno_table[20] = {
     [FR_INVALID_PARAMETER] = MP_EINVAL,
 };
 
-typedef struct _pyb_file_obj_t {
-    mp_obj_base_t base;
-    FIL fp;
-} pyb_file_obj_t;
+
 
 static void file_obj_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     (void)kind;

@@ -65,8 +65,26 @@
 #include "extmod/modbluetooth.h"
 #endif
 
+
 #if MICROPY_PY_ESPNOW
 #include "modespnow.h"
+#endif
+
+#if MICROPY_THINGZ
+#include "common-thingz/thingz.h"
+#include "debug_mode/debug_mode.h"
+#endif
+
+#if MICROPY_THINGZ_SCREEN
+#include "common-thingz/thingz_screen/thingz_screen.h"
+#endif
+
+#if MICROPY_THINGZ_I2C
+#include "common-thingz/thingz_i2c/thingz_i2c.h"
+#endif
+
+#if MICROPY_THINGZ_MEMORY
+#include "common-thingz/thingz_memory/thingz_memory.h"
 #endif
 
 // MicroPython runs as a task under FreeRTOS
@@ -103,12 +121,30 @@ void mp_task(void *pvParameter) {
     #if MICROPY_HW_ESP_USB_SERIAL_JTAG
     usb_serial_jtag_init();
     #elif MICROPY_HW_ENABLE_USBDEV
+    //Reset via debug menu, wait long enough for the computer to unmount usb
+    if(esp_reset_reason() == ESP_RST_SW){
+        vTaskDelay(pdMS_TO_TICKS(800));
+    }
     usb_init();
     #endif
     #if MICROPY_HW_ENABLE_UART_REPL
     uart_stdout_init();
     #endif
     machine_init();
+
+    #if MICROPY_THINGZ_MEMORY
+    thingz_memory_init();
+    #endif
+
+    #if MICROPY_THINGZ_SCREEN
+    thingz_screen_init();
+    thingz_screen_show_splash();
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    #endif
+
+    #if MICROPY_THINGZ_I2C
+    common_thingz_i2c_init(0, MICROPY_THINGZ_I2C_SCL, MICROPY_THINGZ_I2C_SDA, 1000000, MICROPY_THINGZ_I2C_USE_PULLUPS);
+    #endif
 
     // Configure time function, for mbedtls certificate time validation.
     mbedtls_platform_set_time(platform_mbedtls_time);
@@ -125,6 +161,8 @@ void mp_task(void *pvParameter) {
     }
 
 soft_reset:
+    thingz_screen_switch_mode(COMMON_THINGZ_SCREEN_MODE_REPL);
+
     // initialise the stack pointer for the main thread
     mp_cstack_init_with_top((void *)sp, MICROPY_TASK_STACK_SIZE);
     gc_init(mp_task_heap, mp_task_heap + MICROPY_GC_INITIAL_HEAP_SIZE);
@@ -138,18 +176,89 @@ soft_reset:
     machine_i2s_init0();
     #endif
 
+    #if MICROPY_THINGZ
+
+    thingz_init();
+    debug_mode_start();
+
+    #endif
+
+    #if MICROPY_THINGZ_SCREEN
+    MP_STATE_VM(dupterm_objs[0]) = &thingz_screen;
+    #endif
+
+    
     // run boot-up scripts
-    pyexec_frozen_module("_boot.py", false);
-    int ret = pyexec_file_if_exists("boot.py");
+    #if MICROPY_HW_USB_MSC
+    int ret = pyexec_frozen_module("_boot_fat.py", false);
+    #else
+    int ret = pyexec_frozen_module("_boot.py", false);
+    #endif
+
+    nlr_buf_t nlr;
+    uint8_t fail = 0;
+    if (nlr_push(&nlr) == 0) {
+        mp_obj_t args[] = {
+        mp_obj_new_str("/data.csv", 9),
+        mp_obj_new_str("w", 1),
+        };
+        mp_obj_t f = mp_vfs_open(2, args, &mp_const_empty_map);
+        FILE* f2 = fopen("/spiffs/data.csv", "r");
+        uint32_t read;
+        size_t len;
+        char line[100];
+
+        if(f2 != NULL && f != NULL){
+            int err;
+            while (fgets(line, 100, f2)) {
+                mp_stream_write_exactly(f, line, strlen(line), &err);
+            }
+
+            mp_stream_close(f);  
+            fclose(f2);
+        }
+        nlr_pop();
+    } else {
+        fail = 1;
+    }
+
+    //Reload interupt can occur, if so we reload
     if (ret & PYEXEC_FORCED_EXIT) {
         goto soft_reset_exit;
     }
+    ret = pyexec_file_if_exists("boot.py");
+    if (ret & PYEXEC_FORCED_EXIT) {
+        goto soft_reset_exit;
+    }
+    debug_mode_reset_last_exception();
+
+    gc_collect();
+    if (ret & PYEXEC_FORCED_EXIT) {
+        goto soft_reset_exit;
+    }
+    const char* name = (const char*)thingz_get_python_file_to_exec(true);
+    if(fail){
+
+        mp_printf(MP_PYTHON_PRINTER, "Log csv transfer fail\n");
+        mp_obj_print_exception(&thgz_debug_exception_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+        mp_obj_print_exception(MP_PYTHON_PRINTER, MP_OBJ_FROM_PTR(nlr.ret_val));
+    }
     if (pyexec_mode_kind == PYEXEC_MODE_FRIENDLY_REPL && ret != 0) {
-        int ret = pyexec_file_if_exists("main.py");
+        int ret = pyexec_file_if_exists(name);
+        thingz_screen_switch_mode(COMMON_THINGZ_SCREEN_MODE_REPL);
+
         if (ret & PYEXEC_FORCED_EXIT) {
             goto soft_reset_exit;
         }
     }
+
+    char* exception = debug_mode_get_last_exception();
+    if(strlen(exception) > 0){
+        thingz_screen_print_header("Erreur");
+    }else{
+        thingz_screen_print_header("REPL");
+    }
+    gc_collect();
 
     for (;;) {
         if (pyexec_mode_kind == PYEXEC_MODE_RAW_REPL) {
@@ -182,12 +291,21 @@ soft_reset_exit:
     mp_thread_deinit();
     #endif
 
+    #if MICROPY_HW_ENABLE_USB_RUNTIME_DEVICE
+    mp_usbd_deinit();
+    #endif
+
     gc_sweep_all();
 
     // Free any native code pointers that point to iRAM.
     esp_native_code_free_all();
 
-    mp_hal_stdout_tx_str("MPY: soft reboot\r\n");
+    mp_hal_stdout_tx_str("Redémarrage du programme\r\n");
+
+    #if MICROPY_THINGZ
+    thingz_deinit();
+    debug_mode_stop();
+    #endif
 
     // deinitialise peripherals
     machine_pwm_deinit_all();

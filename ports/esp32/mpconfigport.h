@@ -253,6 +253,12 @@
 // Enable stdio over native USB peripheral CDC via TinyUSB
 #ifndef MICROPY_HW_USB_CDC
 #define MICROPY_HW_USB_CDC                  (MICROPY_HW_ENABLE_USBDEV)
+
+#endif
+
+// Enable USB Mass Storage with FatFS filesystem.
+#ifndef MICROPY_HW_USB_MSC
+#define MICROPY_HW_USB_MSC (1)
 #endif
 
 // Enable stdio over USB Serial/JTAG peripheral
@@ -262,6 +268,10 @@
 
 #if MICROPY_HW_USB_CDC && MICROPY_HW_ESP_USB_SERIAL_JTAG
 #error "Invalid build config: Can't enable both native USB and USB Serial/JTAG peripheral"
+#endif
+
+#ifndef MICROPY_HW_ENABLE_USB_RUNTIME_DEVICE
+#define MICROPY_HW_ENABLE_USB_RUNTIME_DEVICE (1)
 #endif
 
 // type definitions for the specific machine
@@ -382,3 +392,5 @@ void boardctrl_startup(void);
 #ifndef MICROPY_PY_STRING_TX_GIL_THRESHOLD
 #define MICROPY_PY_STRING_TX_GIL_THRESHOLD  (20)
 #endif
+
+#define MICROPY_RELOAD_EXCEPTION            (1)

@@ -95,6 +95,15 @@ void mp_init(void) {
     MP_STATE_VM(mp_kbd_exception).args = (mp_obj_tuple_t *)&mp_const_empty_tuple_obj;
     #endif
 
+    #if MICROPY_RELOAD_EXCEPTION
+    // initialise the exception object for raising ReloadInterrupt
+    MP_STATE_VM(mp_reload_exception).base.type = &mp_type_ReloadInterrupt;
+    MP_STATE_VM(mp_reload_exception).traceback_alloc = 0;
+    MP_STATE_VM(mp_reload_exception).traceback_len = 0;
+    MP_STATE_VM(mp_reload_exception).traceback_data = NULL;
+    MP_STATE_VM(mp_reload_exception).args = (mp_obj_tuple_t *)&mp_const_empty_tuple_obj;
+    #endif
+
     #if MICROPY_ENABLE_COMPILER
     // optimization disabled by default
     MP_STATE_VM(mp_optimise_value) = 0;

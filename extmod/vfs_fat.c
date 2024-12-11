@@ -39,6 +39,7 @@
 #include <string.h>
 #include "py/runtime.h"
 #include "py/mperrno.h"
+#include "py/objstr.h"
 #include "lib/oofatfs/ff.h"
 #include "extmod/vfs_fat.h"
 #include "shared/timeutils/timeutils.h"
@@ -411,6 +412,17 @@ static mp_obj_t vfs_fat_umount(mp_obj_t self_in) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(fat_vfs_umount_obj, vfs_fat_umount);
 
+static mp_obj_t vfs_fat_set_label(mp_obj_t self_in, mp_obj_t name) {
+    fs_user_mount_t *self = MP_OBJ_TO_PTR(self_in);
+
+    GET_STR_DATA_LEN(name, str_data, str_len);
+    
+    f_setlabel(&self->fatfs, (const char *)str_data);
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_2(vfs_fat_set_label_obj, vfs_fat_set_label);
+
+
 static const mp_rom_map_elem_t fat_vfs_locals_dict_table[] = {
     #if _FS_REENTRANT
     { MP_ROM_QSTR(MP_QSTR___del__), MP_ROM_PTR(&fat_vfs_del_obj) },
@@ -428,6 +440,8 @@ static const mp_rom_map_elem_t fat_vfs_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_statvfs), MP_ROM_PTR(&fat_vfs_statvfs_obj) },
     { MP_ROM_QSTR(MP_QSTR_mount), MP_ROM_PTR(&vfs_fat_mount_obj) },
     { MP_ROM_QSTR(MP_QSTR_umount), MP_ROM_PTR(&fat_vfs_umount_obj) },
+    { MP_ROM_QSTR(MP_QSTR_set_label), MP_ROM_PTR(&vfs_fat_set_label_obj) },
+
 };
 static MP_DEFINE_CONST_DICT(fat_vfs_locals_dict, fat_vfs_locals_dict_table);
 

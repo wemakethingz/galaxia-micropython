@@ -49,6 +49,10 @@
 
 #if MICROPY_PY_NETWORK_WLAN
 
+#if MICROPY_THINGZ
+#include "common-thingz/thingz.h"
+#endif
+
 #if (WIFI_MODE_STA & WIFI_MODE_AP != WIFI_MODE_NULL || WIFI_MODE_STA | WIFI_MODE_AP != WIFI_MODE_APSTA)
 #error WIFI_MODE_STA and WIFI_MODE_AP are supposed to be bitfields!
 #endif
@@ -204,8 +208,11 @@ static void require_if(mp_obj_t wlan_if, int if_no) {
     }
 }
 
+int wifi_initialized = 0;
 void esp_initialise_wifi(void) {
-    static int wifi_initialized = 0;
+    #if MICROPY_THINGZ
+    thingz_stop_radio();
+    #endif
     if (!wifi_initialized) {
         esp_exceptions(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, network_wlan_wifi_event_handler, NULL, NULL));
         esp_exceptions(esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID, network_wlan_ip_event_handler, NULL, NULL));

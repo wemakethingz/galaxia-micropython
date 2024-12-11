@@ -36,6 +36,11 @@ typedef struct _fs_user_mount_t {
     FATFS fatfs;
 } fs_user_mount_t;
 
+typedef struct _pyb_file_obj_t {
+    mp_obj_base_t base;
+    FIL fp;
+} pyb_file_obj_t;
+
 extern const byte fresult_to_errno_table[20];
 extern const mp_obj_type_t mp_fat_vfs_type;
 extern const mp_obj_type_t mp_type_vfs_fat_fileio;

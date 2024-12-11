@@ -143,10 +143,13 @@ static int parse_compile_execute(const void *source, mp_parse_input_kind_t input
         if (mp_obj_is_subclass_fast(MP_OBJ_FROM_PTR(((mp_obj_base_t *)nlr.ret_val)->type), MP_OBJ_FROM_PTR(&mp_type_SystemExit))) {
             // at the moment, the value of SystemExit is unused
             ret = PYEXEC_FORCED_EXIT;
+        }else if(mp_obj_is_subclass_fast(MP_OBJ_FROM_PTR(((mp_obj_base_t *)nlr.ret_val)->type), MP_OBJ_FROM_PTR(&mp_type_ReloadInterrupt))){
+            ret = PYEXEC_FORCED_EXIT;
         } else {
             mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
             ret = 0;
         }
+        
     }
 
     #if MICROPY_REPL_INFO
@@ -549,11 +552,11 @@ raw_repl_reset:
         }
     }
 }
-
+uint8_t pyexec_repl_active = 0;
 int pyexec_friendly_repl(void) {
     vstr_t line;
     vstr_init(&line, 32);
-
+    pyexec_repl_active = 1;
 friendly_repl_reset:
     mp_hal_stdout_tx_str(MICROPY_BANNER_NAME_AND_VERSION);
     mp_hal_stdout_tx_str("; " MICROPY_BANNER_MACHINE);
@@ -624,6 +627,7 @@ friendly_repl_reset:
             // exit for a soft reset
             mp_hal_stdout_tx_str("\r\n");
             vstr_clear(&line);
+            pyexec_repl_active = 0;
             return PYEXEC_FORCED_EXIT;
         } else if (ret == CHAR_CTRL_E) {
             // paste mode
@@ -670,6 +674,7 @@ friendly_repl_reset:
 
         ret = parse_compile_execute(&line, parse_input_kind, EXEC_FLAG_ALLOW_DEBUGGING | EXEC_FLAG_IS_REPL | EXEC_FLAG_SOURCE_IS_VSTR);
         if (ret & PYEXEC_FORCED_EXIT) {
+            pyexec_repl_active = 0;
             return ret;
         }
     }

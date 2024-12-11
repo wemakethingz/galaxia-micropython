@@ -97,6 +97,7 @@ void mp_deinit(void);
 
 void mp_sched_exception(mp_obj_t exc);
 void mp_sched_keyboard_interrupt(void);
+void mp_sched_reload_interrupt(void);
 #if MICROPY_ENABLE_VM_ABORT
 void mp_sched_vm_abort(void);
 #endif

@@ -68,10 +68,12 @@ if(MICROPY_PY_TINYUSB)
         ${TINYUSB_SRC}/device/usbd.c
         ${TINYUSB_SRC}/device/usbd_control.c
         ${TINYUSB_SRC}/class/cdc/cdc_device.c
+        ${TINYUSB_SRC}/class/msc/msc_device.c
         ${TINYUSB_SRC}/portable/synopsys/dwc2/dcd_dwc2.c
         ${MICROPY_DIR}/shared/tinyusb/mp_usbd.c
         ${MICROPY_DIR}/shared/tinyusb/mp_usbd_cdc.c
         ${MICROPY_DIR}/shared/tinyusb/mp_usbd_descriptor.c
+        ${MICROPY_DIR}/shared/tinyusb/mp_usbd_runtime.c
     )
 
     list(APPEND MICROPY_INC_TINYUSB
@@ -120,6 +122,53 @@ list(APPEND MICROPY_SOURCE_PORT
     machine_rtc.c
     machine_sdcard.c
     modespnow.c
+    msc_disk.c
+    common-thingz/thingz_button/thingz_button.c
+    common-thingz/thingz_button_touch/thingz_button_touch.c
+    common-thingz/thingz.c
+    common-thingz/thingz_screen/thingz_screen.c
+    common-thingz/thingz_screen/thingz_screen_repl.c
+    common-thingz/thingz_screen/thingz_screen_plot.c
+    common-thingz/thingz_screen/thingz_screen_debug.c
+    common-thingz/thingz_screen/thingz_screen_raw.c
+    common-thingz/thingz_display/thingz_display.c
+    common-thingz/thingz_display/thingz_display_console.c
+    common-thingz/thingz_display/thingz_display_plot.c
+    common-thingz/thingz_display/thingz_display_raw.c
+    common-thingz/thingz_display/thingz_display_raw_image.c
+    common-thingz/thingz_display/thingz_display_raw_rectangle.c
+    common-thingz/thingz_display/thingz_display_raw_text.c
+    common-thingz/thingz_accel/thingz_accel.c
+    common-thingz/thingz_i2c/thingz_i2c.c
+    common-thingz/thingz_memory/thingz_memory.c
+    common-thingz/thingz_led/thingz_led.c
+    common-thingz/thingz_sound/thingz_sound.c
+    common-thingz/thingz_radio/thingz_radio.c
+    common-thingz/thingz_log/thingz_log.c
+    lib/tft/font.c
+    lib/tft/decode_jpeg.c
+    lib/tft/decode_png.c
+    lib/tft/fontx.c
+    lib/tft/ili9340.c
+    lib/tft/pngle.c
+    lib/jpeg/jpeg.c
+    lib/jpeg/tjpgd.c
+    lib/lis2dh12/lis2dh12.c
+    lib/qmc6310u/qmc6310u.c
+    hal/accel_lis2dh12.c
+    hal/magneto_qmc6310u.c
+    debug_mode/buttons/buttons.c
+    debug_mode/config/config.c
+    debug_mode/home/home.c
+    debug_mode/last_error/last_error.c
+    debug_mode/led/led.c
+    debug_mode/reboot/reboot.c
+    debug_mode/sensors/sensors.c 
+    debug_mode/ui/scroll/scroll.c 
+    debug_mode/ui/selector/selector.c 
+    debug_mode/ui/text_scroll/text_scroll.c 
+    debug_mode/variables/variables.c 
+    debug_mode/debug_mode.c
 )
 list(TRANSFORM MICROPY_SOURCE_PORT PREPEND ${MICROPY_PORT_DIR}/)
 list(APPEND MICROPY_SOURCE_PORT ${CMAKE_BINARY_DIR}/pins.c)
@@ -166,6 +215,7 @@ list(APPEND IDF_COMPONENTS
     sdmmc
     soc
     spi_flash
+    spiffs
     ulp
     usb
     vfs
