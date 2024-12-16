@@ -1102,7 +1102,7 @@ static int32_t _list_files(char *path, int32_t index, int32_t max, int32_t count
         
         if(strcmp((char*)s, "lib") == 0 || s[0] == '.')
             continue;
-        mp_printf(MP_PYTHON_PRINTER, "%s\n", path);
+        // mp_printf(MP_PYTHON_PRINTER, "%s\n", path);
         mp_obj_tuple_t* stat = mp_vfs_stat(mp_obj_new_str(p, strlen(p)));
         if(mp_obj_get_int(stat->items[0]) & 0x4000){
             //Directory

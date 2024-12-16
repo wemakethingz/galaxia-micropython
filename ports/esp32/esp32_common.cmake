@@ -169,6 +169,7 @@ list(APPEND MICROPY_SOURCE_PORT
     debug_mode/ui/text_scroll/text_scroll.c 
     debug_mode/variables/variables.c 
     debug_mode/debug_mode.c
+    modmicrocontroller.c
 )
 list(TRANSFORM MICROPY_SOURCE_PORT PREPEND ${MICROPY_PORT_DIR}/)
 list(APPEND MICROPY_SOURCE_PORT ${CMAKE_BINARY_DIR}/pins.c)

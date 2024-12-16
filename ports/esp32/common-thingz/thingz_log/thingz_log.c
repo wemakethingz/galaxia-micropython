@@ -136,7 +136,8 @@ MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_log_add_obj, mp_thingz_log_add);
 
 static mp_obj_t mp_thingz_log_delete(mp_obj_t self_in){
     thingz_log_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    if(esp_spiffs_format(NULL) == 0){
+    if(esp_spiffs_format("storage") == 0){
+    // mp_printf(MP_PYTHON_PRINTER, "%d\n", remove("/spiffs/data.csv"));
         if(self->columns){
             FILE* f = fopen("/spiffs/data.csv", "w");
             if(f){
