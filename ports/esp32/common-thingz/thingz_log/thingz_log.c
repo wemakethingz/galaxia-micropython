@@ -114,7 +114,7 @@ static mp_obj_t mp_thingz_log_add(mp_obj_t self_in, mp_obj_list_t* list) {
                 const char* c = _search_columns(list, self->columns[i]);
                 // mp_printf(MP_PYTHON_PRINTER, "search end\n");
                 if(i > 0)
-                    fprintf(f, ",");
+                    fprintf(f, ";");
                 if(c != NULL){
                     found++;
                     fprintf(f, "%s", c);
@@ -147,7 +147,7 @@ static mp_obj_t mp_thingz_log_delete(mp_obj_t self_in){
                     };
                     fprintf(f, "%s", self->columns[i]);
                     if(i+1 < self->columns_len){
-                        fprintf(f, ",");
+                        fprintf(f, ";");
                     }
                 }
                 fprintf(f, "\n");

@@ -1,0 +1,8 @@
+# USERMODULES_DIR := $(USERMOD_DIR)
+
+# # Add all C files to SRC_USERMOD.
+# SRC_USERMOD += $(USERMODULES_DIR)/ethernet.c
+# SRC_USERMOD += $(USERMODULES_DIR)/esp_eth_mac_enc28j60.c
+# SRC_USERMOD += $(USERMODULES_DIR)/esp_eth_phy_enc28j60.c
+
+# CFLAGS_USERMOD += -I$(USERMODULES_DIR)

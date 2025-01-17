@@ -27,7 +27,7 @@ void debug_mode_show_sensors_screen(void){
 
     if(sensor_elem == NULL)
         return;
-    mp_printf(MP_PYTHON_PRINTER, "light\n");
+    // mp_printf(MP_PYTHON_PRINTER, "light\n");
     mp_fun_1_t sensor_func = ((mp_obj_fun_builtin_fixed_t*)sensor_elem->value)->fun._1;
     mp_obj_list_t* list;
     int lum = mp_obj_get_int(sensor_func(&thingz_led));
@@ -38,7 +38,7 @@ void debug_mode_show_sensors_screen(void){
     
     if(sensor_elem == NULL)
         return;
-    mp_printf(MP_PYTHON_PRINTER, "accel\n");
+    // mp_printf(MP_PYTHON_PRINTER, "accel\n");
     sensor_func = ((mp_obj_fun_builtin_fixed_t*)sensor_elem->value)->fun._1;
     list = (mp_obj_list_t*)sensor_func(&thingz_accel);
 
@@ -51,7 +51,7 @@ void debug_mode_show_sensors_screen(void){
     
     if(sensor_elem == NULL)
         return;
-    mp_printf(MP_PYTHON_PRINTER, "magne\n");
+    // mp_printf(MP_PYTHON_PRINTER, "magne\n");
     sensor_func = ((mp_obj_fun_builtin_fixed_t*)sensor_elem->value)->fun._1;
     
     // common_hal_displayio_display_refresh(&displays[0].display, 10000, 10000);
@@ -71,7 +71,7 @@ void debug_mode_show_sensors_screen(void){
     
     if(sensor_elem == NULL)
         return;
-    mp_printf(MP_PYTHON_PRINTER, "temp\n");
+    // mp_printf(MP_PYTHON_PRINTER, "temp\n");
     mp_fun_0_t temp_func = ((mp_obj_fun_builtin_fixed_t*)sensor_elem->value)->fun._0;
 
     temperature = mp_obj_get_int(temp_func());

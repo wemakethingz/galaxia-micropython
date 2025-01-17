@@ -213,7 +213,7 @@ static int mdns_getaddrinfo(const char *host_str, const char *port_str,
 #endif // MICROPY_HW_ENABLE_MDNS_QUERIES
 
 static void _getaddrinfo_inner(const mp_obj_t host, const mp_obj_t portx,
-    const struct addrinfo *hints, struct addrinfo **res) {
+    struct addrinfo *hints, struct addrinfo **res) {
     int retval = 0;
 
     *res = NULL;
@@ -231,6 +231,10 @@ static void _getaddrinfo_inner(const mp_obj_t host, const mp_obj_t portx,
     if (host_str[0] == '\0') {
         // a host of "" is equivalent to the default/all-local IP address
         host_str = "0.0.0.0";
+    }
+
+    if(hints){
+        hints->ai_flags |= AI_CANONNAME;
     }
 
     MP_THREAD_GIL_EXIT();
@@ -252,8 +256,9 @@ static void _getaddrinfo_inner(const mp_obj_t host, const mp_obj_t portx,
     }
     // Somehow LwIP returns a resolution of 0.0.0.0 for failed lookups, traced it as far back
     // as netconn_gethostbyname_addrtype returning OK instead of error.
-    if (*res == NULL ||
-        (strcmp(res[0]->ai_canonname, "0.0.0.0") == 0 && strcmp(host_str, "0.0.0.0") != 0)) {
+    printf("ADDDDDDDDD %p %p\n", res[0], res[0]->ai_canonname);
+    if (*res == NULL || 
+        (res[0]->ai_canonname && strcmp(res[0]->ai_canonname, "0.0.0.0") == 0 && strcmp(host_str, "0.0.0.0") != 0)) {
         lwip_freeaddrinfo(*res);
         mp_raise_OSError(-2); // name or service not known
     }
