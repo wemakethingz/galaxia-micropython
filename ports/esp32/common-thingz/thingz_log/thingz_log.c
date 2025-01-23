@@ -181,7 +181,7 @@ static mp_obj_t mp_thingz_log_set_columns(mp_obj_t self_in, mp_obj_list_t* list)
     self->columns_len = list->len;
     self->columns = malloc(sizeof(char*)*self->columns_len);
     for(int i = 0; i < self->columns_len; i++){
-        self->columns[i] = malloc(strlen(mp_obj_str_get_str(list->items[i])));
+        self->columns[i] = malloc(strlen(mp_obj_str_get_str(list->items[i]))+1);
         strcpy(self->columns[i], mp_obj_str_get_str(list->items[i]));
     }
     // return mp_const_none;
