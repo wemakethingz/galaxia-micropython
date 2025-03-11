@@ -24,6 +24,7 @@
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "esp_interface.h"
+#include "esp_mac.h"
 
 #include "shared/netutils/netutils.h"
 
@@ -170,7 +171,6 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
     eth_status = ETH_GOT_IP;
 }
 
-extern bool wifi_ever_inited;
 static mp_obj_t ethernet___init__(void) {
     ethernet_obj_t *self = &ethernet_obj;
     gpio_install_isr_service(0);
@@ -207,11 +207,10 @@ static mp_obj_t ethernet___init__(void) {
         .queue_size = 20
     };
         
-    if(!wifi_ever_inited){
-        wifi_ever_inited = true;
-        esp_netif_init();
-        esp_event_loop_create_default();
-    }
+   
+    esp_netif_init();
+    esp_event_loop_create_default();
+    
 
     esp_netif_config_t netif_cfg = ESP_NETIF_DEFAULT_ETH();
     netif = esp_netif_new(&netif_cfg);
@@ -239,11 +238,9 @@ static mp_obj_t ethernet___init__(void) {
     }
     glue_handle = esp_eth_new_netif_glue(eth_handle);
 
-    w5500_mac->set_addr(w5500_mac, (uint8_t[]) {
-        0x0e, 0x5f, 0x5f, 0x12, 0x34, 0x56
-    });
-    uint8_t mac[6];
-    w5500_mac->get_addr(w5500_mac, mac);
+    unsigned char mac_base[6] = {0};
+    esp_read_mac(mac_base, ESP_MAC_ETH);
+    w5500_mac->set_addr(w5500_mac, mac_base);
 
     esp_netif_attach(netif, glue_handle);
     

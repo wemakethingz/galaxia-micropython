@@ -66,6 +66,10 @@ typedef struct{
     uint8_t count;
 } thingz_accel_shake_t;
 
+typedef struct {
+    double x, y, z;
+} thingz_compass_data_t;
+
 void thingz_accel_compass_temp_init(thingz_accel_obj_t* accel, thingz_compass_obj_t* compass, thingz_temp_obj_t* temp, int8_t pinINT, int8_t pinINT2, int8_t pinDRDY);
 void thingz_accel_compass_temp_deinit(thingz_accel_obj_t* accel, thingz_compass_obj_t* compass, thingz_temp_obj_t* temp);
 
@@ -80,8 +84,8 @@ void common_thingz_compass_init(thingz_compass_obj_t* compass, int8_t pinDRDY, u
 void common_thingz_accel_deinit(thingz_accel_obj_t* accel);
 
 void common_thingz_accel_get_accel(thingz_accel_obj_t* accel, float* values);
-void common_thingz_compass_get_gauss(thingz_compass_obj_t* compass, float* values, bool calibrate);
-void common_thingz_compass_calibrate(thingz_compass_obj_t* compass);
+void common_thingz_compass_get_gauss(thingz_compass_obj_t* compass, uint8_t raw, thingz_compass_data_t* values);
+void common_thingz_compass_calibrate(thingz_compass_obj_t* compass, int duration, int sample);
 
 float common_thingz_accel_compass_temp_get_temp(thingz_temp_obj_t* temp);
 

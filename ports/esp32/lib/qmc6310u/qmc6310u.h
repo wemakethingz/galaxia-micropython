@@ -116,4 +116,7 @@ int32_t qmc630u_reset(qmc630u_ctx_t* ctx);
 
 float qmc630u_get_from_raw_to_mgauss(int16_t raw, qmc630u_range_t range);
 
+int32_t qmc630u_init(qmc630u_ctx_t* ctx, uint8_t range, uint8_t freq);
+
+int32_t qmc630u_get_mgauss(qmc630u_ctx_t* ctx, float *values, uint8_t range);
 #endif

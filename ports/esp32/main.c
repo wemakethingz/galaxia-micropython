@@ -132,20 +132,18 @@ void mp_task(void *pvParameter) {
     #endif
     machine_init();
 
+    #if MICROPY_THINGZ_I2C
+    common_thingz_i2c_init(0, MICROPY_THINGZ_I2C_SCL, MICROPY_THINGZ_I2C_SDA, 1000000, MICROPY_THINGZ_I2C_USE_PULLUPS);
+    #endif
+
     #if MICROPY_THINGZ_MEMORY
     thingz_memory_init();
     #endif
-
     #if MICROPY_THINGZ_SCREEN
     thingz_screen_init();
     thingz_screen_show_splash();
     vTaskDelay(pdMS_TO_TICKS(2000));
     #endif
-
-    #if MICROPY_THINGZ_I2C
-    common_thingz_i2c_init(0, MICROPY_THINGZ_I2C_SCL, MICROPY_THINGZ_I2C_SDA, 1000000, MICROPY_THINGZ_I2C_USE_PULLUPS);
-    #endif
-
     // Configure time function, for mbedtls certificate time validation.
     mbedtls_platform_set_time(platform_mbedtls_time);
 

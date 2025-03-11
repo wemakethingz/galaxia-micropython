@@ -1371,7 +1371,9 @@ void thingz_screen_show_splash(){
         }
         spi_master_write_colors(&(thingz_screen.dev), pixels, 160);
     }
-	thingz_screen_print_screen((uint8_t*)MICROPY_GIT_TAG, strlen(MICROPY_GIT_TAG), 160-THINGZ_SCREEN_FONT_WIDTH*strlen(MICROPY_GIT_TAG), 0, 0xFFFF, 1);
+	char str[64];
+    sprintf(str, "HW:%s SW:%s", thingz_memory_get_pcb_version_name(), MICROPY_GIT_TAG);
+	thingz_screen_print_screen((uint8_t*)str, strlen(str), 160-THINGZ_SCREEN_FONT_WIDTH*strlen(str), 0, 0xFFFF, 1);
     xSemaphoreGive(controlLcd);
     
 }

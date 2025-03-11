@@ -155,8 +155,10 @@ list(APPEND MICROPY_SOURCE_PORT
     lib/jpeg/tjpgd.c
     lib/lis2dh12/lis2dh12.c
     lib/qmc6310u/qmc6310u.c
+    lib/qmc6309/qmc6309.c
     hal/accel_lis2dh12.c
-    hal/magneto_qmc6310u.c
+    hal/magneto.c
+    hal/eeprom.c
     debug_mode/buttons/buttons.c
     debug_mode/config/config.c
     debug_mode/home/home.c
@@ -170,7 +172,7 @@ list(APPEND MICROPY_SOURCE_PORT
     debug_mode/variables/variables.c 
     debug_mode/debug_mode.c
     modmicrocontroller.c
-    # ethernet/ethernet.c
+    ethernet/ethernet.c
 )
 list(TRANSFORM MICROPY_SOURCE_PORT PREPEND ${MICROPY_PORT_DIR}/)
 list(APPEND MICROPY_SOURCE_PORT ${CMAKE_BINARY_DIR}/pins.c)
@@ -314,8 +316,10 @@ target_sources(${MICROPY_TARGET} PRIVATE ${GEN_PINS_HDR})
 
 add_custom_command(
     OUTPUT ${GEN_PINS_SRC} ${GEN_PINS_HDR}
+    COMMAND echo hello318
     COMMAND ${Python3_EXECUTABLE} ${GEN_PINS_MKPINS} ${GEN_PINS_BOARD_CSV_ARG}
         --prefix ${GEN_PINS_PREFIX} --output-source ${GEN_PINS_SRC} --output-header ${GEN_PINS_HDR}
+    COMMAND echo hello321
     DEPENDS
         ${MICROPY_MPVERSION}
         ${GEN_PINS_MKPINS}

@@ -1,5 +1,6 @@
 #include "lib/qmc6310u/qmc6310u.h"
 #include "esp_err.h"
+#include <stdint.h>
 
 int32_t qmc630u_read_reg(qmc630u_ctx_t *ctx, uint8_t reg, uint8_t *data, uint16_t len){
   int32_t ret;
@@ -101,6 +102,45 @@ int32_t qmc630u_reset(qmc630u_ctx_t* ctx){
     return ESP_OK;
 }
 
+int32_t qmc630u_init(qmc630u_ctx_t* ctx, uint8_t range, uint8_t freq){
+
+    uint8_t data = 0x2;
+
+    qmc630u_ctrl1_t ctl1;
+    qmc630u_ctrl2_t ctl2;
+
+    qmc630u_write_reg(ctx, 0x29, &data, 1);
+
+    ctl2.set_reset = QMC630U_SET_RESET_ON;
+    ctl2.rng = range;
+    ctl2.self_test = 0;
+    ctl2.soft_reset = 0;
+    qmc630u_set_ctrl2(ctx, ctl2);
+    
+    ctl1.mode = QMC630U_MODE_NORMAL;
+    switch((int)freq){
+        case 10:
+            ctl1.odr = QMC630U_OUTPUT_RATE_10HZ;
+        break;
+        case 50:
+            ctl1.odr = QMC630U_OUTPUT_RATE_50HZ;
+        break;
+        case 100:
+            ctl1.odr = QMC630U_OUTPUT_RATE_100HZ;
+        break;
+        case 200:
+            ctl1.odr = QMC630U_OUTPUT_RATE_200HZ;
+        break;
+    }
+    
+    ctl1.osr1 = QMC630U_OVERSAMPLE_RATIO_8;
+    ctl1.osr2 = QMC630U_DOWNSAMPLING_RATE_8;
+
+    qmc630u_set_ctrl1(ctx,  ctl1);
+
+    return 0;
+}
+
 
 float qmc630u_get_from_raw_to_mgauss(int16_t raw, qmc630u_range_t range){
     // return (float)raw/2.5f;
@@ -136,4 +176,33 @@ float qmc630u_get_from_raw_to_mgauss(int16_t raw, qmc630u_range_t range){
         break;
     }
     return (float)(raw - in_min) * (float)(out_max_min) / (float)(in_max_min) + out_min;
+}
+
+int32_t qmc630u_get_mgauss(qmc630u_ctx_t* ctx, float *values, uint8_t range){
+    int32_t error;
+    qmc630u_status_t status;
+    uint8_t retry = 0;
+    int16_t reg[3];
+    do {
+        error = qmc630u_get_status(ctx, &status); 
+        if(error != ESP_OK){
+            return 1;
+        }
+        retry++;
+    } while (!status.drdy && retry <= 3);
+
+    if(status.drdy){
+        error = qmc630u_get_raw_values(ctx, reg);
+        if(error != ESP_OK){
+            return 1;
+        }
+    }else{
+        return 1;
+    }
+    
+    values[0] = qmc630u_get_from_raw_to_mgauss(reg[0], range);
+    values[1] = qmc630u_get_from_raw_to_mgauss(reg[1], range);
+    values[2] = qmc630u_get_from_raw_to_mgauss(reg[2], range);
+
+    return 0;
 }

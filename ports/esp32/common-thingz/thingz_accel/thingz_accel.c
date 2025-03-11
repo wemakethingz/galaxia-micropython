@@ -487,9 +487,9 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_compass_del_obj, mp_thingz_compass_del);
 //GET X
 static mp_obj_t mp_thingz_compass_get_x(mp_obj_t self_in) {
 	thingz_compass_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    float values[3];
-    common_thingz_compass_get_gauss(self, values, false);
-	return mp_obj_new_float(values[0]/10);
+    thingz_compass_data_t data;
+    common_thingz_compass_get_gauss(self, 0, &data);
+	return mp_obj_new_float(data.x/10.0);
 }
 
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_compass_get_x_obj, mp_thingz_compass_get_x);
@@ -497,10 +497,10 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_compass_get_x_obj, mp_thingz_compass_get_x);
 //GET Y
 static mp_obj_t mp_thingz_compass_get_y(mp_obj_t self_in) {
 	thingz_compass_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    float values[3];
-    common_thingz_compass_get_gauss(self, values, false);
+    thingz_compass_data_t data;
+    common_thingz_compass_get_gauss(self, 0, &data);
     //convert to uT
-	return mp_obj_new_float(values[1]/10);
+	return mp_obj_new_float(data.y/10.0);
 }
 
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_compass_get_y_obj, mp_thingz_compass_get_y);
@@ -508,9 +508,9 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_compass_get_y_obj, mp_thingz_compass_get_y);
 //GET Z
 static mp_obj_t mp_thingz_compass_get_z(mp_obj_t self_in) {
 	thingz_compass_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    float values[3];
-    common_thingz_compass_get_gauss(self, values, false);
-	return mp_obj_new_float(values[2]/10);
+    thingz_compass_data_t data;
+    common_thingz_compass_get_gauss(self, 0, &data);
+	return mp_obj_new_float(data.z/10.0);
 }
 
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_compass_get_z_obj, mp_thingz_compass_get_z);
@@ -518,14 +518,13 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_compass_get_z_obj, mp_thingz_compass_get_z);
 //GET
 static mp_obj_t mp_thingz_compass_get(mp_obj_t self_in) {
 	thingz_compass_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    float values[3];
-    
-    common_thingz_compass_get_gauss(self, values, false);
+    thingz_compass_data_t data;
+    common_thingz_compass_get_gauss(self, 0, &data);
 
     mp_obj_t mp_values[3];
-    mp_values[0] = mp_obj_new_float(values[0]/10);
-    mp_values[1] = mp_obj_new_float(values[1]/10);
-    mp_values[2] = mp_obj_new_float(values[2]/10);
+    mp_values[0] = mp_obj_new_float(data.x/10.0);
+    mp_values[1] = mp_obj_new_float(data.y/10.0);
+    mp_values[2] = mp_obj_new_float(data.z/10.0);
 
     return mp_obj_new_list(3, mp_values);
 }
@@ -535,9 +534,9 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_compass_get_obj, mp_thingz_compass_get);
 //HEADING
 static mp_obj_t mp_thingz_compass_heading(mp_obj_t self_in) {
 	thingz_compass_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    float values[3];
-    common_thingz_compass_get_gauss(self, values, false);
-    float heading = (double)atan2f(values[0], values[1])*(double)(180.0/M_PI);
+    thingz_compass_data_t data;
+    common_thingz_compass_get_gauss(self, 0, &data);
+    float heading = (double)atan2f(data.x, data.y)*(double)(180.0/M_PI);
     if(heading > 360)
 		heading -= 360;
 	else if(heading < 0)
@@ -548,12 +547,12 @@ static mp_obj_t mp_thingz_compass_heading(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_compass_heading_obj, mp_thingz_compass_heading);
 
 //CALIBRATE
-static mp_obj_t mp_thingz_compass_calibrate(mp_obj_t self_in){
+static mp_obj_t mp_thingz_compass_calibrate(mp_obj_t self_in, mp_obj_t duration, mp_obj_t sample){
     thingz_compass_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    common_thingz_compass_calibrate(self);
+    common_thingz_compass_calibrate(self, mp_obj_get_int(duration), mp_obj_get_int(sample));
     return mp_const_none;
 }
-MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_compass_calibrate_obj, mp_thingz_compass_calibrate);
+MP_DEFINE_CONST_FUN_OBJ_3(mp_thingz_compass_calibrate_obj, mp_thingz_compass_calibrate);
 
 static const mp_map_elem_t thingz_compass_local_dict_table[] = {
 	
