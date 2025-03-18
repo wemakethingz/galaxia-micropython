@@ -144,7 +144,7 @@ void common_thingz_accel_init(thingz_accel_obj_t* accel, int8_t pinINT, int8_t p
 
     update_timer_args.arg = accel;
     esp_timer_create(&update_timer_args, &update_timer);
-    esp_timer_start_periodic(update_timer, 80000); 
+    esp_timer_start_periodic(update_timer, 19000); 
 }
 
 void common_thingz_accel_deinit(thingz_accel_obj_t* accel){
