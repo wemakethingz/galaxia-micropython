@@ -63,7 +63,7 @@ void thingz_set_input_target(uint8_t target, void (*callback)(thingz_input_event
 input_event_callback thingz_get_input_event_callback(void);
 
 void thingz_set_python_file_to_exec(const char* name);
-char* thingz_get_python_file_to_exec(uint8_t cp437);
+char* thingz_get_python_file_to_exec(uint8_t cp437, uint8_t print);
 
 void thingz_print_filename(const char* name);
 

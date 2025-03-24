@@ -123,8 +123,12 @@ int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t *
     if(part){
         esp_partition_erase_range(part, lba * BLOCK_SIZE, count * BLOCK_SIZE);
         esp_partition_write(part, lba * BLOCK_SIZE, buffer, count * BLOCK_SIZE);
-        if(lba == 1 && !pyexec_repl_active){
-            mp_sched_reload_interrupt();
+        if(lba == 1){
+            if(!pyexec_repl_active){
+                mp_sched_reload_interrupt();
+            }else{
+                ringbuf_put(&stdin_ringbuf, 4);
+            }
         }
         return count * BLOCK_SIZE;
     }else{

@@ -175,7 +175,7 @@ static void _active_row(void){
 void debug_mode_show_home_screen(void){
     debug_mode_clear_screen();
     debug_mode_print_header(); 
-
+    
     debug_mode_ui_scroll_print(&scroll_pages);
 
     _active_row();
@@ -193,6 +193,9 @@ void debug_mode_home_enter(void){
     debug_mode_ui_selector_set_position(&selector, selector.x, selected_row);
 
     debug_mode_set_header_text(home_title);
+
+    debug_mode_clear_screen();
+    debug_mode_print_header(); 
 
 }
 

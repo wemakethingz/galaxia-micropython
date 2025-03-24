@@ -146,21 +146,22 @@ static void thingz_sound_wav_decode(thingz_sound_obj_t * sound){
 
 static void thingz_sound_set_ios(uint8_t on, int8_t jackL, int8_t jackR, int8_t jackGND){
     gpio_config_t io_conf;
+    io_conf.pin_bit_mask = 1ull << jackGND;
+    io_conf.mode = GPIO_MODE_INPUT_OUTPUT;
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+
+    gpio_reset_pin(jackGND);
+
+    gpio_config(&io_conf);
 
     if(on){
-        io_conf.pin_bit_mask = 1ull << jackGND;
-        io_conf.mode = GPIO_MODE_INPUT_OUTPUT;
-        gpio_reset_pin(jackGND);
-
-        gpio_config(&io_conf);
         gpio_set_level(jackGND,0);
         gpio_set_drive_capability(jackGND, GPIO_DRIVE_CAP_3);
         
         gpio_set_level(jackGND, 0);
     }else{
-        gpio_reset_pin(jackGND);
-
-        gpio_config(&io_conf);
         gpio_set_level(jackGND,0);
         gpio_set_level(jackR,0);
         gpio_set_level(jackL,0);
@@ -169,12 +170,14 @@ static void thingz_sound_set_ios(uint8_t on, int8_t jackL, int8_t jackR, int8_t 
 }
 
 static void thingz_sound_config_sinus(thingz_sound_obj_t* sound){
-
+    sound->mode = THINGZ_SOUND_MODE_SINUS;
+    if(sound->current_freq == 0){
+        return;
+    }
     if(sound->dac_handle){
         dac_continuous_disable(sound->dac_handle);
         dac_continuous_del_channels(sound->dac_handle);
     }
-
     dac_continuous_config_t cont_cfg = {
         .chan_mask = DAC_CHANNEL_MASK_ALL,
         .desc_num = 8,
@@ -184,6 +187,7 @@ static void thingz_sound_config_sinus(thingz_sound_obj_t* sound){
         .clk_src = DAC_DIGI_CLK_SRC_APLL,
         .chan_mode = DAC_CHANNEL_MODE_SIMUL,
     };
+    
     /* Allocate continuous channels */
     dac_continuous_new_channels(&cont_cfg, &sound->dac_handle);
     if(sound->current_volume != sound->request_volume){
@@ -191,7 +195,7 @@ static void thingz_sound_config_sinus(thingz_sound_obj_t* sound){
         thingz_sound_generate_wave(sound->current_volume);
     }
 
-    sound->mode = THINGZ_SOUND_MODE_SINUS;
+    
 
 }
 
@@ -248,7 +252,6 @@ static void thingz_sound_play(thingz_sound_obj_t* sound, uint8_t on){
 
         sound->current_freq = sound->requested_freq;
         thingz_sound_config_sinus(sound);
-        
         if(on && sound->current_freq > 0){
             thingz_sound_set_ios(1, sound->pinJackL, sound->pinJackR, sound->pinJackGND);
             dac_continuous_enable(sound->dac_handle);

@@ -2,13 +2,21 @@
 #include "common-thingz/thingz_i2c/thingz_i2c.h"
 #include "esp_err.h"
 #include "py/mpprint.h"
-
+#include "esp_vfs.h"
+#include "esp_spiffs.h"
 
 #define THINGZ_MEMORY_EEPROM_ADDR 0xA0
 
 nvs_handle nvsHandle;
 
 void thingz_memory_init(void){
+    //logger partition
+    esp_vfs_spiffs_conf_t conf = {
+		.base_path = "/spiffs",
+		.partition_label = "storage",
+		.max_files = 16,
+		.format_if_mount_failed =true
+	};
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES) {
         // NVS partition was truncated and needs to be erased
@@ -18,6 +26,19 @@ void thingz_memory_init(void){
     }
 
     nvs_open("nvs", NVS_READWRITE, &nvsHandle);
+    esp_err_t ret = esp_vfs_spiffs_register(&conf);
+
+    if (ret != ESP_OK) {
+		if (ret == ESP_FAIL) {
+			printf("Failed to mount or format filesystem");
+		} else if (ret == ESP_ERR_NOT_FOUND) {
+			printf("Failed to find SPIFFS partition");
+            
+		} else {
+			printf("Failed to initialize SPIFFS (%s)",esp_err_to_name(ret));
+		}
+		return;
+	}
     thingz_memory_load_eeprom_info();
 }
 
@@ -48,7 +69,7 @@ int32_t thingz_memory_write_array_eeprom(uint16_t addr, uint8_t* value, uint8_t 
         }
         esp_err_t err = common_thingz_i2c_write(THINGZ_MEMORY_EEPROM_ADDR, 0, addr+i,  value+i, s);
         vTaskDelay(pdMS_TO_TICKS(10));
-        mp_printf(MP_PYTHON_PRINTER, "Add %d, len %d, res %d\n", addr+i, s, err);
+        // mp_printf(MP_PYTHON_PRINTER, "Add %d, len %d, res %d\n", addr+i, s, err);
         l -= s;
         i+=s;
         s = 8;

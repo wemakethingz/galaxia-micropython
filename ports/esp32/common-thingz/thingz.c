@@ -79,15 +79,16 @@ void thingz_set_python_file_to_exec(const char* name){
     thingz_print_filename(name);
 }
 
-char* thingz_get_python_file_to_exec(uint8_t cp437){
+char* thingz_get_python_file_to_exec(uint8_t cp437, uint8_t print){
     nvs_handle* nvsHandle;
     nvsHandle = thingz_memory_get_handle();
     size_t length = 256;
     if(nvs_get_str(*nvsHandle, "filename", python_file_to_exec, &length) != ESP_OK){
         sprintf(python_file_to_exec, "%s", "main.py");
     }
-
-    thingz_print_filename(python_file_to_exec);
+    
+    if(print)
+        thingz_print_filename(python_file_to_exec);
 
 
     if(cp437){

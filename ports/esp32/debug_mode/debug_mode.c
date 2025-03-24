@@ -262,6 +262,7 @@ static mp_obj_t mp_debug_handle_screen(uint8_t* current){
         _exit_debug();
         return mp_const_none;
     }
+    thingz_screen_autorefresh(0);
     switch(*current){
         case DEBUG_SCREEN_HOME:
             debug_mode_show_home_screen();
@@ -288,6 +289,7 @@ static mp_obj_t mp_debug_handle_screen(uint8_t* current){
             debug_mode_show_reboot_screen();
         break;
     }
+    thingz_screen_autorefresh(1);
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_debug_handle_screen_obj, mp_debug_handle_screen);
@@ -382,10 +384,11 @@ static void _debug_task(void *pvParameter) {
                 break;
             }
             
-            if(modeDebug)
+            if(modeDebug){
                 mp_sched_schedule((mp_obj_t)&mp_debug_handle_screen_obj, &currentScreen);            
+            }
             
-            vTaskDelay(1);
+            vTaskDelay(pdMS_TO_TICKS(10));
         }
         // mp_printf(MP_PYTHON_PRINTER, "fewfewf\n");
         // vTaskDelay(10);

@@ -27,6 +27,7 @@ typedef struct thingz_screen_obj{
 	thingz_screen_plot_t plot;
 	thingz_screen_debug_t debug;
 	thingz_screen_raw_t raw;
+	uint8_t autorefresh;
 
 	uint16_t *lineData;
     uint16_t lineDataSize;
@@ -55,5 +56,7 @@ void thingz_screen_print_header(const char* filename);
 void thingz_screen_clear();
 
 void thingz_screen_show_splash();
+
+void thingz_screen_autorefresh(uint8_t autorefresh);
 
 #endif

@@ -6,6 +6,7 @@
 #include "esp_vfs.h"
 #include "esp_spiffs.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #include "lib/tft/ili9340.h"
 #include "lib/tft/fontx.h"
@@ -1346,6 +1347,12 @@ const char* TAG="SCREEN";
 static BaseType_t refreshTask;
 static SemaphoreHandle_t controlLcd;
 
+
+static void _thingz_screen_refresh(void *arg);
+static esp_timer_handle_t refreshTimer;
+static const esp_timer_create_args_t refreshTimerArgs = { .callback = &_thingz_screen_refresh, .name = "refresh_screen" };
+
+
 uint16_t _convertTo565(uint16_t r,uint16_t g,uint16_t b) {
 	return (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
 }
@@ -1353,7 +1360,7 @@ uint16_t _convertTo565(uint16_t r,uint16_t g,uint16_t b) {
 
 void thingz_screen_show_splash(){
     int i = 0;
-    if(xSemaphoreTake(controlLcd, 10) == pdFALSE)
+    if(xSemaphoreTake(controlLcd, portMAX_DELAY) == pdFALSE)
             return;
     thingz_screen.current_mode = COMMON_THINGZ_SCREEN_MODE_SPLASH;
     for(i = 0; i < 128; i++){
@@ -1380,9 +1387,9 @@ void thingz_screen_show_splash(){
 
 static void _thingz_screen_refresh(void *arg){
 
-    for(;;){
-        if(xSemaphoreTake(controlLcd, 10) == pdFALSE)
-            continue;
+    // for(;;){
+        if(xSemaphoreTake(controlLcd, pdMS_TO_TICKS(10)) == pdFALSE)
+            return;
         switch(thingz_screen.current_mode){
             case COMMON_THINGZ_SCREEN_MODE_REPL:
                 thingz_screen_repl_refresh(&thingz_screen.repl);
@@ -1398,8 +1405,7 @@ static void _thingz_screen_refresh(void *arg){
 			break;
         }
         xSemaphoreGive(controlLcd);
-        vTaskDelay(pdMS_TO_TICKS(40));
-    }
+    // }
 }
 
 void thingz_screen_init(void){
@@ -1417,6 +1423,8 @@ void thingz_screen_init(void){
 
 	
     // ESP_LOGE(TAG, "display type 3 %d", display_type);
+
+	thingz_screen.autorefresh = 1;
     thingz_screen.params.offsetx = MICROPY_THINGZ_SCREEN_OFFSETX;
     thingz_screen.params.offsety = MICROPY_THINGZ_SCREEN_OFFSETY;
     thingz_screen.params.font_height = THINGZ_SCREEN_FONT_HEIGHT;
@@ -1470,7 +1478,10 @@ void thingz_screen_init(void){
 
 
     thingz_screen.current_mode = 0;
-    refreshTask = xTaskCreatePinnedToCore(_thingz_screen_refresh, "thingz_screen", 1024, 0, 1, NULL, 0);
+	esp_timer_create(&refreshTimerArgs, &refreshTimer);
+	esp_timer_start_periodic(refreshTimer, 40*1000);
+
+    // refreshTask = xTaskCreatePinnedToCore(_thingz_screen_refresh, "thingz_screen", 1024, 0, 1, NULL, 0);
 }
 
 void thingz_screen_print_screen_with_glyp_index(uint8_t* str, uint32_t len, uint32_t x, uint32_t y, uint16_t foreground){
@@ -1538,7 +1549,9 @@ void thingz_screen_print_screen(uint8_t* str, uint32_t len, uint32_t x, uint32_t
         */
         for(int k = 0; k < thingz_screen.params.font_width; k++){
             for(int l = 0; l < thingz_screen.params.font_height; l++){
-                thingz_screen.lineData[thingz_screen.params.font_width*thingz_screen.params.font_height*cpt+k*thingz_screen.params.font_height+l] = glyph[k*thingz_screen.params.font_height+l] == 1 ? foreground : 0; 
+				uint16_t index = thingz_screen.params.font_width*thingz_screen.params.font_height*cpt+k*thingz_screen.params.font_height+l;
+				if( index < thingz_screen.lineDataSize)
+                	thingz_screen.lineData[index] = glyph[k*thingz_screen.params.font_height+l] == 1 ? foreground : 0; 
             }
         }
 
@@ -1555,6 +1568,9 @@ void thingz_screen_print_screen(uint8_t* str, uint32_t len, uint32_t x, uint32_t
 
     spi_master_write_comm_byte(&(thingz_screen.dev), 0x2C);	// Memory Write
     uint32_t end = thingz_screen.params.font_width*thingz_screen.params.font_height*cpt;
+	if(end > thingz_screen.lineDataSize){
+		end = thingz_screen.lineDataSize;
+	}
     for(int j = 0; j < end; j+=500){
         uint16_t s = end-j > 500 ? 500 : end-j;
         spi_master_write_colors(&(thingz_screen.dev), thingz_screen.lineData+j, s);
@@ -1564,7 +1580,7 @@ void thingz_screen_print_screen(uint8_t* str, uint32_t len, uint32_t x, uint32_t
 
 void thingz_screen_switch_mode(uint8_t mode){
     uint8_t oldMode = thingz_screen.current_mode;
-    xSemaphoreTake(controlLcd, 10);
+    xSemaphoreTake(controlLcd, portMAX_DELAY);
     thingz_screen.current_mode = mode;
     xSemaphoreGive(controlLcd);
     switch(oldMode){
@@ -1604,7 +1620,7 @@ uint8_t thingz_screen_get_mode(){
 }
 
 void thingz_screen_print_header(const char* filename){
-    xSemaphoreTake(controlLcd, 10);
+    xSemaphoreTake(controlLcd, portMAX_DELAY);
     lcdDrawFillRect(&thingz_screen.dev, MICROPY_THINGZ_SCREEN_HEIGHT-15, 0, MICROPY_THINGZ_SCREEN_HEIGHT-1, MICROPY_THINGZ_SCREEN_WIDTH-1, 0);
     uint16_t color = 0x07e0;
     char* exception = debug_mode_get_last_exception();
@@ -1626,9 +1642,28 @@ void thingz_screen_print_header(const char* filename){
 }
 
 void thingz_screen_clear(){
-    xSemaphoreTake(controlLcd, 10);
+    xSemaphoreTake(controlLcd, portMAX_DELAY);
     lcdFillScreen(&thingz_screen.dev, BLACK);
     xSemaphoreGive(controlLcd);
+}
+
+void thingz_screen_lock(){
+	xSemaphoreTake(controlLcd, portMAX_DELAY);
+}
+
+void thingz_screen_unlock(){
+	xSemaphoreGive(controlLcd);
+}
+
+void thingz_screen_autorefresh(uint8_t autorefresh){
+	if(thingz_screen.autorefresh == 0 && autorefresh){
+		_thingz_screen_refresh(NULL);
+		esp_timer_start_periodic(refreshTimer, 40*1000);
+		thingz_screen.autorefresh = 1;
+	}else{
+		esp_timer_stop(refreshTimer);
+		thingz_screen.autorefresh = 0;
+	}
 }
 
 static mp_uint_t thingz_screen_write(mp_obj_t obj, const void *buf, mp_uint_t size, int *errcode){

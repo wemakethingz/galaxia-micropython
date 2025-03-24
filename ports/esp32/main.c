@@ -234,7 +234,7 @@ soft_reset:
     if (ret & PYEXEC_FORCED_EXIT) {
         goto soft_reset_exit;
     }
-    const char* name = (const char*)thingz_get_python_file_to_exec(true);
+    const char* name = (const char*)thingz_get_python_file_to_exec(true, 1);
     if(fail){
 
         mp_printf(MP_PYTHON_PRINTER, "Log csv transfer fail\n");

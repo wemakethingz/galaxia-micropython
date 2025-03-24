@@ -28,7 +28,7 @@ void thingz_screen_repl_init(thingz_screen_repl_t *repl, thingz_screen_obj_t *sc
 }
 
 void thingz_screen_repl_enter(){
-    char* filename = thingz_get_python_file_to_exec(true);
+    char* filename = thingz_get_python_file_to_exec(true, 1);
     //thingz_print_filename(filename);
 }
 
@@ -39,18 +39,13 @@ void thingz_screen_repl_exit(){
 static void _thingz_screen_repl_scroll(thingz_screen_repl_t *repl){
     if(repl->cursor_y < 0){
         repl->cursor_y = 0;
-        uint8_t tmp[repl->dataColumns];
-        for(int j=0; j < repl->dataColumns; j++){
-            repl->data[repl->dataLines-1][j] = repl->data[repl->dataLines-1][j];
-        }
+       
         for(int i = repl->dataLines-1; i > 0; i--){
             for(int j=0; j < repl->dataColumns; j++){
                 repl->data[i][j] = repl->data[i-1][j];
             }
         }
-        for(int j=0; j < repl->dataColumns; j++){
-            repl->data[0][j] = tmp[j];
-        }
+        
     }
 }
 
@@ -80,12 +75,7 @@ mp_uint_t thingz_screen_repl_write(thingz_screen_repl_t *repl, const void *buf, 
     while(i < bu + size){
         unichar c = utf8_get_char(i);
         i = utf8_next_char(i);
-        _thingz_screen_repl_scroll(repl);
-        if(repl->cursor_y != repl->last_cursor_y){
-            for(int j = 0; j < repl->dataColumns; j++){
-                repl->data[repl->cursor_y][j] = 0xff;
-            }
-        }
+        
 
         if(c == '\r'){
             repl->cursor_x = 0;
@@ -166,10 +156,20 @@ mp_uint_t thingz_screen_repl_write(thingz_screen_repl_t *repl, const void *buf, 
                         }
                     }
                     i += j + 1;
-                    continue;
+                    
+                    
                 }
+                repl->last_cursor_y = repl->cursor_y;
+                repl->last_cursor_x = repl->cursor_x;
+                continue;
             }
         }else{
+            _thingz_screen_repl_scroll(repl);
+            if(repl->cursor_y != repl->last_cursor_y){
+                for(int j = 0; j < repl->dataColumns; j++){
+                    repl->data[repl->cursor_y][j] = 0xff;
+                }
+            }
             repl->data[repl->cursor_y][repl->cursor_x] = font_get_glyph_index(c);//0xe9;
             repl->cursor_x++;
         }

@@ -1112,7 +1112,7 @@ static int32_t _list_files(char *path, int32_t index, int32_t max, int32_t count
             // mp_printf(MP_PYTHON_PRINTER, "%s\n", path);
             counter = _list_files(path, index, max, counter, y);
         }else{
-            if (strncmp((char*)(s + strlen((char*)s) - 3), ".py", 3) != 0)
+            if (strcmp((char*)s, "boot.py") == 0 || strncmp((char*)(s + strlen((char*)s) - 3), ".py", 3) != 0)
                 continue;
             if (counter - index >= max)
                 return 0xffff;
@@ -1197,9 +1197,8 @@ void debug_mode_config_enter(void)
 
     debug_mode_ui_selector_init(&selector, 0, 0, DEBUG_MODE_CONFIG_MIN_SELECTED_ROW, DEBUG_MODE_CONFIG_MAX_SELECTED_ROW, '*', 500000);
 
-    if (strlen(thingz_get_python_file_to_exec(false)) == 0)
-        thingz_set_python_file_to_exec("code.py");
-    char *name = thingz_get_python_file_to_exec(false);
+    char *name = thingz_get_python_file_to_exec(false, 0);
+    
     sprintf(extended_page_title, "%s : %s", config_page_title, name);
     debug_mode_set_header_text(extended_page_title);
 }
