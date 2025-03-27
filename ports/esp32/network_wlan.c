@@ -50,7 +50,7 @@
 #if MICROPY_PY_NETWORK_WLAN
 
 #if MICROPY_THINGZ
-#include "common-thingz/thingz.h"
+#include "common-thingz/thingz/thingz.h"
 #endif
 
 #if (WIFI_MODE_STA & WIFI_MODE_AP != WIFI_MODE_NULL || WIFI_MODE_STA | WIFI_MODE_AP != WIFI_MODE_APSTA)

@@ -15,7 +15,7 @@
 #include "esp_spiffs.h"
 
 
-#include "common-thingz/thingz.h"
+#include "common-thingz/thingz/thingz.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

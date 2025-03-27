@@ -7,7 +7,7 @@
 #include "py/objlist.h"
 #include "py/objmodule.h"
 
-#include "common-thingz/thingz.h"
+#include "common-thingz/thingz/thingz.h"
 
 
 #include "common-thingz/thingz_led/thingz_led.h"

@@ -1,5 +1,5 @@
 #include "thingz.h"
-#include "thingz_memory/thingz_memory.h"
+#include "common-thingz/thingz_memory/thingz_memory.h"
 
 #include <string.h>
 

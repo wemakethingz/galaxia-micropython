@@ -13,7 +13,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#include "common-thingz/thingz.h"
+#include "common-thingz/thingz/thingz.h"
 
 #define THINGZ_BUTTON_TOUCH_REGISTERED_LENGTH 10
 #define THINGZ_BUTTON_TOUCH_SENSITIVITY 0.62

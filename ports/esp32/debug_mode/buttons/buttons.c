@@ -2,7 +2,7 @@
 
 #include "debug_mode/debug_mode.h"
 
-#include "common-thingz/thingz.h"
+#include "common-thingz/thingz/thingz.h"
 #include "common-thingz/thingz_button/thingz_button.h"
 #include "common-thingz/thingz_button_touch/thingz_button_touch.h"
 

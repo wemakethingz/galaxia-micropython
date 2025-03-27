@@ -1,15 +1,15 @@
 #ifndef COMMON_THINGZ_H_
 #define COMMON_THINGZ_H_
 
-#include "thingz_button/thingz_button.h"
-#include "thingz_button_touch/thingz_button_touch.h"
-#include "thingz_screen/thingz_screen.h"
-#include "thingz_accel/thingz_accel.h"
-#include "thingz_led/thingz_led.h"
-#include "thingz_sound/thingz_sound.h"
-#include "thingz_radio/thingz_radio.h"
-#include "thingz_display/thingz_display.h"
-#include "thingz_log/thingz_log.h"
+#include "common-thingz/thingz_button/thingz_button.h"
+#include "common-thingz/thingz_button_touch/thingz_button_touch.h"
+#include "common-thingz/thingz_screen/thingz_screen.h"
+#include "common-thingz/thingz_accel/thingz_accel.h"
+#include "common-thingz/thingz_led/thingz_led.h"
+#include "common-thingz/thingz_sound/thingz_sound.h"
+#include "common-thingz/thingz_radio/thingz_radio.h"
+#include "common-thingz/thingz_display/thingz_display.h"
+#include "common-thingz/thingz_log/thingz_log.h"
 
 #define THINGZ_INPUT_TARGET_PYTHON 0
 #define THINGZ_INPUT_TARGET_TGZ_DEBUG 1

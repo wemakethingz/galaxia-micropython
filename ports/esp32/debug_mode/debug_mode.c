@@ -29,7 +29,7 @@
 
 #include "esp_log.h"
 
-#include "common-thingz/thingz.h"
+#include "common-thingz/thingz/thingz.h"
 
 #include "debug_mode/ui/text_scroll/text_scroll.h"
 

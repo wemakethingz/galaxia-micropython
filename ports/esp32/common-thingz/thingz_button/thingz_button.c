@@ -7,7 +7,7 @@
 
 #include "driver/gpio.h"
 
-#include "common-thingz/thingz.h"
+#include "common-thingz/thingz/thingz.h"
 
 //called by supervisor
 static void thingz_button_background_callback(void *args){

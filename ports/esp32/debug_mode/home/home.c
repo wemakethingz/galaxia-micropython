@@ -6,7 +6,7 @@
 #include "debug_mode/ui/scroll/scroll.h"
 #include "debug_mode/ui/selector/selector.h"
 
-#include "common-thingz/thingz.h"
+#include "common-thingz/thingz/thingz.h"
 
 
 #define DEBUG_MODE_HOME_MIN_SELECTED_ROW 1
@@ -175,7 +175,7 @@ static void _active_row(void){
 void debug_mode_show_home_screen(void){
     debug_mode_clear_screen();
     debug_mode_print_header(); 
-    
+
     debug_mode_ui_scroll_print(&scroll_pages);
 
     _active_row();

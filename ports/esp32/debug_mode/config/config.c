@@ -12,7 +12,7 @@
 #include "debug_mode/ui/selector/selector.h"
 #include "debug_mode/ui/text_scroll/text_scroll.h"
 
-#include "common-thingz/thingz.h"
+#include "common-thingz/thingz/thingz.h"
 
 #include "mphalport.h"
 #include "shared/runtime/pyexec.h"

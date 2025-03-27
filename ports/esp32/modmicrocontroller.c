@@ -34,7 +34,7 @@
 #include "mphalport.h"
 #include "shared/runtime/pyexec.h"
 
-#include "common-thingz/thingz.h"
+#include "common-thingz/thingz/thingz.h"
 
 
 

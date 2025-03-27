@@ -1,7 +1,7 @@
 #include "thingz_screen_repl.h"
 #include "py/misc.h"
 #include "thingz_screen.h"
-#include "common-thingz/thingz.h"
+#include "common-thingz/thingz/thingz.h"
 
 #include "string.h"
 

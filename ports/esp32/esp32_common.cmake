@@ -125,7 +125,7 @@ list(APPEND MICROPY_SOURCE_PORT
     msc_disk.c
     common-thingz/thingz_button/thingz_button.c
     common-thingz/thingz_button_touch/thingz_button_touch.c
-    common-thingz/thingz.c
+    common-thingz/thingz/thingz.c
     common-thingz/thingz_screen/thingz_screen.c
     common-thingz/thingz_screen/thingz_screen_repl.c
     common-thingz/thingz_screen/thingz_screen_plot.c
