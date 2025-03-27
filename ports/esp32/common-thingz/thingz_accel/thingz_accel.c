@@ -258,7 +258,7 @@ void thingz_accel_new_data_callback(void *args){
 //| """ Thingz accelerometer
 //| """
 //|
-//|class Accel:
+//| class Accel:
 //|    """Control Galaxia's accelerometer"""
 //|
 //|

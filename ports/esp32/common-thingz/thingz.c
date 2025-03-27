@@ -560,9 +560,87 @@ void thingz_print_filename(const char* name){
     // }
     // // common_hal_displayio_display_refresh(&displays[0].display, 0xffffffff, 10000);
 }
+//| """Thingz module
+//|
+//| Used to access Galaxia's internal component
+//|
+//|
+//| """
+
+//| button_a: Button
+//| """
+//| Galaxia's button A
+//| This object is an instance of `Button`
+//| """
+//|
+//| button_b: Button
+//| """
+//| Galaxia's button B
+//| This object is an instance of `Button`
+//| """
+//|
+//| touch_n: ButtonTouch
+//| """
+//| Galaxia's touch button North
+//| This object is an instance of `ButtonTouch`
+//| """
+//|
+//| touch_s: ButtonTouch
+//| """
+//| Galaxia's touch button South
+//| This object is an instance of `ButtonTouch`
+//| """
+//| 
+//| touch_e: ButtonTouch
+//| """
+//| Galaxia's touch button Est
+//| This object is an instance of `ButtonTouch`
+//| """
+//|
+//| touch_w: ButtonTouch
+//| """
+//| Galaxia's touch button West
+//| This object is an instance of `ButtonTouch`
+//| """
+//|
+//| led: Led
+//| """
+//| Galaxia's RGB LED
+//| This object is an instance of `Led`
+//| """
+//| 
+//| accelerometer: Accel
+//| """
+//| Galaxia's accelerometer
+//| This object is an instance of `Accel`
+//| """
+//|
+//| compass: Compass
+//| """
+//| Galaxia's magnetometer
+//| This object is an instance of `Compass`
+//| """
+//|
+//| sound: Sound
+//| """
+//| Galaxia's jack connector
+//| This object is an instance of `Sound`
+//| """
+//|
+//| radio: Radio
+//| """
+//| Galaxia's wireless communication
+//| This object is an instance of `Radio`
+//| """
 
 
 //GET TEMP
+//| def temperature() -> int:
+//|     """
+//|     :return: the current temperature by reading internal sensor.
+//|     :rtype: int
+//|     """
+//|     ...
 static mp_obj_t mp_thingz_get_temp(void) {
     //float temp = thingz_accel_compass_temp_get_temp(&thingz_temp);
 	float tsens_out;
@@ -575,6 +653,10 @@ MP_DEFINE_CONST_FUN_OBJ_0(mp_thingz_get_temp_obj, mp_thingz_get_temp);
 
 
 //SET TEMPERATURE OFFSET
+//| def set_temperature_offset(offset:int) -> None:
+//|    """Calibrate internal temperature sensor by applying an offset"""
+//|    ...
+//|
 static mp_obj_t mp_thingz_set_temperature_offset(mp_obj_t offset) {
 
 	float off;
