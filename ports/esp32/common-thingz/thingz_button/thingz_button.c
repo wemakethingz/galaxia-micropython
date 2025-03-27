@@ -99,7 +99,7 @@ void thingz_button_init(thingz_button_obj_t* button, uint8_t pin){
 //| """ Thingz button
 //| """
 //|
-//|class Button:
+//| class Button:
 //|    """Control Galaxia's physical buttons"""
 //|
 //|

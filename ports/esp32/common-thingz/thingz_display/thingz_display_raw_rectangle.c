@@ -8,7 +8,19 @@
 #include "py/obj.h"
 #include "py/runtime.h"
 
-
+//|
+//| """ Thingz Display Raw Rect
+//| """
+//|
+//| class Rect(x, y, width, height, color):
+//|    """
+//|    Create an rectangle and print it to the screen
+//|    :param int x: X position
+//|    :param int y: Y position
+//|    :param int width: Width of the rectangle
+//|    :param int height: Height of the rectangle
+//|    """
+//|
 mp_obj_t mp_thingz_display_raw_rectangle_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     mp_arg_check_num(n_args, n_kw, 5, 5, false);
     // get the wanted pin object
@@ -38,7 +50,14 @@ mp_obj_t mp_thingz_display_raw_rectangle_make_new(const mp_obj_type_t *type, siz
     thingz_screen_raw_add_show_obj(&(thingz_screen.raw), self);
     return MP_OBJ_FROM_PTR(self);
 }
-
+//|    def show(self, show) -> None:
+//|        """
+//|        Show/Hide the rectangle
+//|        
+//|        :param bool show: Show the rectangle if True hide if False
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_rectangle_show(mp_obj_t self_in, mp_obj_t show) {
     thingz_display_raw_rectangle_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if(!mp_obj_is_bool(show)){
@@ -54,7 +73,14 @@ static mp_obj_t mp_thingz_display_raw_rectangle_show(mp_obj_t self_in, mp_obj_t 
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_rectangle_show_obj, mp_thingz_display_raw_rectangle_show);
 
-
+//|    def x(self, pos) -> None:
+//|        """
+//|        Set x position
+//|        
+//|        :param int pos: x position
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_rectangle_x(mp_obj_t self_in, mp_obj_t x) {
     thingz_display_raw_rectangle_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if(!mp_obj_is_int(x)){
@@ -68,6 +94,14 @@ static mp_obj_t mp_thingz_display_raw_rectangle_x(mp_obj_t self_in, mp_obj_t x) 
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_rectangle_x_obj, mp_thingz_display_raw_rectangle_x);
 
+//|    def y(self, pos) -> None:
+//|        """
+//|        Set y position
+//|        
+//|        :param int pos: y position
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_rectangle_y(mp_obj_t self_in, mp_obj_t y) {
     thingz_display_raw_rectangle_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if(!mp_obj_is_int(y)){
@@ -81,6 +115,15 @@ static mp_obj_t mp_thingz_display_raw_rectangle_y(mp_obj_t self_in, mp_obj_t y) 
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_rectangle_y_obj, mp_thingz_display_raw_rectangle_y);
 
+
+//|    def color(self, color) -> None:
+//|        """
+//|        Set rectangle color
+//|        
+//|        :param int color: color
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_rectangle_color(mp_obj_t self_in, mp_obj_t color) {
     thingz_display_raw_rectangle_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if(!mp_obj_is_int(color)){
@@ -94,6 +137,13 @@ static mp_obj_t mp_thingz_display_raw_rectangle_color(mp_obj_t self_in, mp_obj_t
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_rectangle_color_obj, mp_thingz_display_raw_rectangle_color);
 
+//|    def get_show(self) -> bool:
+//|        """
+//|        Return True if the rectangle is shown
+//|        
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_rectangle_get_show(mp_obj_t self_in) {
     thingz_display_raw_rectangle_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -101,6 +151,13 @@ static mp_obj_t mp_thingz_display_raw_rectangle_get_show(mp_obj_t self_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_rectangle_get_show_obj, mp_thingz_display_raw_rectangle_get_show);
 
+
+//|    def get_x(self) -> int:
+//|        """
+//|        Get x position
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_rectangle_get_x(mp_obj_t self_in) {
     thingz_display_raw_rectangle_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -108,6 +165,12 @@ static mp_obj_t mp_thingz_display_raw_rectangle_get_x(mp_obj_t self_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_rectangle_get_x_obj, mp_thingz_display_raw_rectangle_get_x);
 
+//|    def get_y(self) -> int:
+//|        """
+//|        Get y position
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_rectangle_get_y(mp_obj_t self_in) {
     thingz_display_raw_rectangle_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -115,6 +178,12 @@ static mp_obj_t mp_thingz_display_raw_rectangle_get_y(mp_obj_t self_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_rectangle_get_y_obj, mp_thingz_display_raw_rectangle_get_y);
 
+//|    def get_width(self) -> int:
+//|        """
+//|        Get image width
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_rectangle_get_width(mp_obj_t self_in) {
     thingz_display_raw_rectangle_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -122,6 +191,12 @@ static mp_obj_t mp_thingz_display_raw_rectangle_get_width(mp_obj_t self_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_rectangle_get_width_obj, mp_thingz_display_raw_rectangle_get_width);
 
+//|    def get_height(self) -> int:
+//|        """
+//|        Get image height
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_rectangle_get_height(mp_obj_t self_in) {
     thingz_display_raw_rectangle_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -129,6 +204,12 @@ static mp_obj_t mp_thingz_display_raw_rectangle_get_height(mp_obj_t self_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_rectangle_get_height_obj, mp_thingz_display_raw_rectangle_get_height);
 
+//|    def get_color(self) -> int:
+//|        """
+//|        Get color
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_rectangle_get_color(mp_obj_t self_in) {
     thingz_display_raw_rectangle_obj_t *self = MP_OBJ_TO_PTR(self_in);
     

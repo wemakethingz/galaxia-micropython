@@ -22,6 +22,30 @@ void thingz_display_raw_deinit(thingz_display_raw_obj_t* raw){
     thingz_screen_raw_remove_show_obj(&(thingz_screen.raw), NULL);
 }
 
+//|
+//| """ Thingz Display Raw
+//| """
+//|
+//| class Raw:
+//|    """
+//|    Use the LCD to display graphical elements
+//|    """
+//|
+
+//|    Img: Img
+//|    """
+//|    Class `Img` to create an image
+//|    """
+//|
+//|    Rect: Rect
+//|    """
+//|    Class `Rect` to create a rectangle
+//|    """
+//|
+//|    Text: Text
+//|    """
+//|    Class `Text` to create a text
+//|    """
 //NEW
 static mp_obj_t mp_thingz_display_raw_make_new(const mp_obj_type_t *type,
         mp_uint_t n_args, mp_uint_t n_kw, const mp_obj_t *args) {
@@ -44,6 +68,12 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_del_obj, mp_thingz_display_raw_d
 
 
 //SHOW
+//|    def show(self) -> None:
+//|        """
+//|        Show the raw interface
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_show(mp_obj_t self_in){
     thingz_screen_switch_mode(COMMON_THINGZ_SCREEN_MODE_RAW);
     
@@ -52,6 +82,16 @@ static mp_obj_t mp_thingz_display_raw_show(mp_obj_t self_in){
 
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_show_obj, mp_thingz_display_raw_show);
 
+//|    def print(self, x, y, txt) -> None:
+//|        """
+//|        Print text at a given position
+//|        
+//|        :param int x: X position
+//|        :param int y: Y position
+//|        :param str txt: The text to print
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_print(size_t n_pos_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
 
     thingz_display_raw_obj_t* raw = pos_args[0];
@@ -98,7 +138,16 @@ static mp_obj_t mp_thingz_display_raw_print(size_t n_pos_args, const mp_obj_t *p
 }
 MP_DEFINE_CONST_FUN_OBJ_KW(mp_thingz_display_raw_print_obj, 4, mp_thingz_display_raw_print);
 
-
+//|    def print_bmp(self, x, y, path) -> None:
+//|        """
+//|        Print BMP file at a given position
+//|        
+//|        :param int x: X position
+//|        :param int y: Y position
+//|        :param str path: The path to the BMP file
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_print_bmp(size_t n_pos_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
 
     thingz_display_raw_obj_t* raw = pos_args[0];

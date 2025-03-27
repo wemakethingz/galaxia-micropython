@@ -27,7 +27,31 @@ void thingz_display_deinit(thingz_display_obj_t* display){
     thingz_display_console_deinit(&thingz_display_console);
     thingz_display_raw_deinit(&thingz_display_raw);
 }
-
+//|
+//| """ Thingz Display
+//| """
+//| 
+//| class Display:
+//|    """Control Galaxia LCD display"""
+//| 
+//|    plot: Plot
+//|    """
+//|    Plot data on the LCD
+//|    This object is an instance of `Plot`
+//|    """
+//| 
+//|    console: Console
+//|    """
+//|    Show REPL output on the LCD
+//|    This object is an instance of `Console`
+//|    """
+//|    
+//|    raw: Raw
+//|    """
+//|    Display graphical elements
+//|    This object is an instance of `Raw`
+//|    """
+//| 
 //NEW
 static mp_obj_t mp_thingz_display_make_new(const mp_obj_type_t *type,
         mp_uint_t n_args, mp_uint_t n_kw, const mp_obj_t *args) {

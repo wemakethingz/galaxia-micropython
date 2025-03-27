@@ -9,7 +9,19 @@
 #include "py/runtime.h"
 
 
-
+//|
+//| """ Thingz Display Raw Img
+//| """
+//|
+//| class Img(x, y, path, white_replacement):
+//|    """
+//|    Create an image and print it to the screen
+//|    :param int x: X position
+//|    :param int y: Y position
+//|    :param str path: Path to the BMP file
+//|    :param int white_replacement: Color used to replace white pixels
+//|    """
+//|
 
 mp_obj_t mp_thingz_display_raw_img_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     mp_arg_check_num(n_args, n_kw, 4, 4, false);
@@ -38,6 +50,14 @@ mp_obj_t mp_thingz_display_raw_img_make_new(const mp_obj_type_t *type, size_t n_
     return MP_OBJ_FROM_PTR(self);
 }
 
+//|    def show(self, show) -> None:
+//|        """
+//|        Show/Hide the image
+//|        
+//|        :param bool show: Show the image if True hide if False
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_img_show(mp_obj_t self_in, mp_obj_t show) {
     thingz_display_raw_img_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if(!mp_obj_is_bool(show)){
@@ -53,7 +73,14 @@ static mp_obj_t mp_thingz_display_raw_img_show(mp_obj_t self_in, mp_obj_t show) 
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_img_show_obj, mp_thingz_display_raw_img_show);
 
-
+//|    def x(self, pos) -> None:
+//|        """
+//|        Set x position
+//|        
+//|        :param int pos: x position
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_img_x(mp_obj_t self_in, mp_obj_t x) {
     thingz_display_raw_img_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if(!mp_obj_is_int(x)){
@@ -67,6 +94,15 @@ static mp_obj_t mp_thingz_display_raw_img_x(mp_obj_t self_in, mp_obj_t x) {
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_img_x_obj, mp_thingz_display_raw_img_x);
 
+
+//|    def y(self, pos) -> None:
+//|        """
+//|        Set y position
+//|        
+//|        :param int pos: y position
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_img_y(mp_obj_t self_in, mp_obj_t y) {
     thingz_display_raw_img_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if(!mp_obj_is_int(y)){
@@ -80,6 +116,14 @@ static mp_obj_t mp_thingz_display_raw_img_y(mp_obj_t self_in, mp_obj_t y) {
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_img_y_obj, mp_thingz_display_raw_img_y);
 
+//|    def white_replacement_color(self, color) -> None:
+//|        """
+//|        Change all white pixels to another color
+//|        
+//|        :param int color: color to use as replacement
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_img_white_replacement_color(mp_obj_t self_in, mp_obj_t white_replacement_color) {
     thingz_display_raw_img_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if(!mp_obj_is_int(white_replacement_color)){
@@ -93,6 +137,14 @@ static mp_obj_t mp_thingz_display_raw_img_white_replacement_color(mp_obj_t self_
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_img_white_replacement_color_obj, mp_thingz_display_raw_img_white_replacement_color);
 
+
+//|    def get_show(self) -> bool:
+//|        """
+//|        Return True if the image is shown
+//|        
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_img_get_show(mp_obj_t self_in) {
     thingz_display_raw_img_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -100,6 +152,12 @@ static mp_obj_t mp_thingz_display_raw_img_get_show(mp_obj_t self_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_img_get_show_obj, mp_thingz_display_raw_img_get_show);
 
+//|    def get_x(self) -> int:
+//|        """
+//|        Get x position
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_img_get_x(mp_obj_t self_in) {
     thingz_display_raw_img_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -107,6 +165,12 @@ static mp_obj_t mp_thingz_display_raw_img_get_x(mp_obj_t self_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_img_get_x_obj, mp_thingz_display_raw_img_get_x);
 
+//|    def get_y(self) -> int:
+//|        """
+//|        Get y position
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_img_get_y(mp_obj_t self_in) {
     thingz_display_raw_img_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -114,6 +178,12 @@ static mp_obj_t mp_thingz_display_raw_img_get_y(mp_obj_t self_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_img_get_y_obj, mp_thingz_display_raw_img_get_y);
 
+//|    def get_width(self) -> int:
+//|        """
+//|        Get image width
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_img_get_width(mp_obj_t self_in) {
     thingz_display_raw_img_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -121,6 +191,12 @@ static mp_obj_t mp_thingz_display_raw_img_get_width(mp_obj_t self_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_img_get_width_obj, mp_thingz_display_raw_img_get_width);
 
+//|    def get_height(self) -> int:
+//|        """
+//|        Get image height
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_img_get_height(mp_obj_t self_in) {
     thingz_display_raw_img_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -128,6 +204,12 @@ static mp_obj_t mp_thingz_display_raw_img_get_height(mp_obj_t self_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_img_get_height_obj, mp_thingz_display_raw_img_get_height);
 
+//|    def get_white_replacement(self) -> int:
+//|        """
+//|        Get color used as white replacement
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_img_get_white_replacement_color(mp_obj_t self_in) {
     thingz_display_raw_img_obj_t *self = MP_OBJ_TO_PTR(self_in);
     

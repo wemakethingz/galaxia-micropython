@@ -20,6 +20,16 @@ void thingz_display_plot_deinit(thingz_display_plot_obj_t* plot){
     thingz_screen_plot_set_animate_function(&(thingz_screen.plot), NULL, 0);
 }
 
+//|
+//| """ Thingz Display Plot
+//| """
+//|
+//| class Plot:
+//|    """
+//|    Use the LCD as a plot
+//|    """
+//|
+
 //NEW
 static mp_obj_t mp_thingz_display_plot_make_new(const mp_obj_type_t *type,
         mp_uint_t n_args, mp_uint_t n_kw, const mp_obj_t *args) {
@@ -42,6 +52,12 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_plot_del_obj, mp_thingz_display_plot
 
 
 //SHOW
+//|    def show(self) -> None:
+//|        """
+//|        Show the plot
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_plot_show(mp_obj_t self_in){
     thingz_screen_switch_mode(COMMON_THINGZ_SCREEN_MODE_PLOT);
     
@@ -51,6 +67,14 @@ static mp_obj_t mp_thingz_display_plot_show(mp_obj_t self_in){
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_plot_show_obj, mp_thingz_display_plot_show);
 
 //ADD POINT
+//|    def add_point(self, value: int|float) -> None:
+//|        """
+//|        Add a new point to the plot.
+//|
+//|        :param int|float value: The position on the Y axis of new point
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_plot_add_point(mp_obj_t self_in, mp_obj_t value) {
 
     float arg=0;
@@ -76,6 +100,15 @@ static mp_obj_t mp_thingz_display_plot_add_point(mp_obj_t self_in, mp_obj_t valu
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_plot_add_point_obj, mp_thingz_display_plot_add_point);
 
 //SET Y SCALE
+//|    def set_y_scale(self, min: int, max: int) -> None:
+//|        """
+//|        Set the scale of the plot
+//|
+//|        :param int min: The min value of the Y axis
+//|        :param int max: The max value of the Y axis
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_plot_set_y_scale(mp_obj_t self_in, mp_obj_t min, mp_obj_t max) {
 
     thingz_display_plot_obj_t* plot = (thingz_display_plot_obj_t*)self_in;
@@ -118,6 +151,15 @@ static mp_obj_t mp_thingz_display_plot_set_y_scale(mp_obj_t self_in, mp_obj_t mi
 MP_DEFINE_CONST_FUN_OBJ_3(mp_thingz_display_plot_set_y_scale_obj, mp_thingz_display_plot_set_y_scale);
 
 //SET ANIMATE FUNCTION
+//|    def set_animate_function(self, func: Callable, interval: int) -> None:
+//|        """
+//|        Configure a function that will be called once every interval to add a point to the plot. The function must return the value of the new point
+//|
+//|        :param Callable func: The function to call
+//|        :param int interval: Time to wait between each function call, in seconds
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_plot_set_animate_function(mp_obj_t self_in, mp_obj_t fun, mp_obj_t interval) {
 
     thingz_display_plot_obj_t* plot = (thingz_display_plot_obj_t*)self_in;

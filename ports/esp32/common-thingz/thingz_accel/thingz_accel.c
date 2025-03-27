@@ -570,7 +570,7 @@ MP_DEFINE_CONST_OBJ_TYPE(
 //| """ Thingz Magnetometer
 //| """
 //|
-//|class Compass:
+//| class Compass:
 //|    """Control Galaxia's magnetometer"""
 //|
 //|

@@ -311,15 +311,15 @@ void thingz_button_touch_deinit(thingz_button_touch_obj_t* button_touch){
     }
 }
 
-//|
-//|
+//| 
+//| 
 //| """ Thingz button touch
 //| """
-//|
-//|class ButtonTouch:
+//| 
+//| class ButtonTouch:
 //|    """Control Galaxia's touch buttons"""
-//|
-//|
+//| 
+//| 
 
 //NEW
 static mp_obj_t mp_thingz_button_touch_make_new(const mp_obj_type_t *type,
@@ -348,7 +348,7 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_button_touch_del_obj, mp_thingz_button_touch
 //|        :rtype: bool
 //|        """
 //|        ...
-//|
+//| 
 static mp_obj_t mp_thingz_button_touch_is_touched(mp_obj_t self_in) {
     thingz_button_touch_obj_t *self = MP_OBJ_TO_PTR(self_in);
 
@@ -367,7 +367,7 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_button_touch_is_touched_obj, mp_thingz_butto
 //|        :rtype: bool
 //|        """
 //|        ...
-//|
+//| 
 static mp_obj_t mp_thingz_button_touch_was_touched(mp_obj_t self_in) {
 	thingz_button_touch_obj_t *self = MP_OBJ_TO_PTR(self_in);
     bool touched = self->was_touched;
@@ -381,12 +381,12 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_button_touch_was_touched_obj, mp_thingz_butt
 //|    def get_touches(self) -> int:
 //|        """
 //|        Get the number of touches since the last call
-//|
+//| 
 //|        :return: The number of touches since the last call
 //|        :rtype: int
 //|        """
 //|        ...
-//|
+//| 
 static mp_obj_t mp_thingz_button_touch_get_touches(mp_obj_t self_in) {
 	thingz_button_touch_obj_t *self = MP_OBJ_TO_PTR(self_in);
     uint32_t touches = self->touches_count;
@@ -399,10 +399,10 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_button_touch_get_touches_obj, mp_thingz_butt
 //ON TOUCHED
 //|    def on_touched(self, callback: Callable[Optional[Button]]) -> None:
 //|        """Register a callaback bind to touch event
-//|
+//| 
 //|        :param Callable[Optional[ButtonTouch]] callback: The function to call when the event occurs. When called the button will be passed as paramater""" 
 //|        ...
-//|
+//| 
 static mp_obj_t mp_thingz_button_touch_on_touched(mp_obj_t self_in, mp_obj_t function) {
 
     thingz_button_touch_obj_t *self = MP_OBJ_TO_PTR(self_in);

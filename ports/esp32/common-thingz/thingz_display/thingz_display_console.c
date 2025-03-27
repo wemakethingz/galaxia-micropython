@@ -15,6 +15,16 @@ void thingz_display_console_deinit(thingz_display_console_obj_t* console){
     
 }
 
+//|
+//| """ Thingz Display Console
+//| """
+//|
+//| class Console:
+//|    """
+//|    Show the REPL output on the screen 
+//|    """
+//|
+
 //NEW
 static mp_obj_t mp_thingz_display_console_make_new(const mp_obj_type_t *type,
         mp_uint_t n_args, mp_uint_t n_kw, const mp_obj_t *args) {
@@ -37,6 +47,12 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_console_del_obj, mp_thingz_display_c
 
 
 //SHOW
+//|    def show(self) -> None:
+//|        """
+//|        Show the REPL
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_console_show(mp_obj_t self_in){
     thingz_screen_switch_mode(COMMON_THINGZ_SCREEN_MODE_REPL);
     
