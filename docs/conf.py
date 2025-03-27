@@ -52,6 +52,7 @@ extensions = [
     "sphinx.ext.todo",
     "sphinx.ext.coverage",
     "sphinxcontrib.jquery",
+    "sphinx_rtd_theme"
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -138,6 +139,7 @@ if not on_rtd:  # only import and set the theme if we're building docs locally
         html_theme = "default"
         html_theme_path = ["."]
 else:
+    html_theme = "sphinx_rtd_theme"
     html_theme_path = ["."]
 
 # Theme options are theme-specific and customize the look and feel of a theme
