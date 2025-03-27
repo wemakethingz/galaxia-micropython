@@ -94,7 +94,15 @@ void thingz_button_init(thingz_button_obj_t* button, uint8_t pin){
     esp_timer_create(&button->debounce_timer_args, &button->debounce_timer);
     
 }
-
+//|
+//|
+//| """ Thingz button
+//| """
+//|
+//|class Button:
+//|    """Control Galaxia's physical buttons"""
+//|
+//|
 //NEW
 static mp_obj_t mp_thingz_button_make_new(const mp_obj_type_t *type,
         mp_uint_t n_args, mp_uint_t n_kw, const mp_obj_t *args) {
@@ -116,6 +124,13 @@ static mp_obj_t mp_thingz_button_del(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_button_del_obj, mp_thingz_button_del);
 
 //IS PRESSED
+//|    def is_pressed(self) -> bool:
+//|        """
+//|        :return: True if button is pressed, False otherwise
+//|        :rtype: bool
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_button_is_pressed(mp_obj_t self_in) {
 	thingz_button_obj_t *self = MP_OBJ_TO_PTR(self_in);
 	return mp_obj_new_bool(self->state);
@@ -124,6 +139,13 @@ static mp_obj_t mp_thingz_button_is_pressed(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_button_is_pressed_obj, mp_thingz_button_is_pressed);
 
 //WAS PRESSED
+//|    def was_pressed(self) -> bool:
+//|        """
+//|        :return: True if button has been pressed since last call, False otherwise
+//|        :rtype: bool
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_button_was_pressed(mp_obj_t self_in) {
 	thingz_button_obj_t *self = MP_OBJ_TO_PTR(self_in);
     bool pressed = self->was_pressed;
@@ -135,6 +157,15 @@ static mp_obj_t mp_thingz_button_was_pressed(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_button_was_pressed_obj, mp_thingz_button_was_pressed);
 
 //GET PRESSES
+//|    def get_presses(self) -> int:
+//|        """
+//|        Get the number of presses since the last call
+//|
+//|        :return: The number of presses since the last call
+//|        :rtype: int
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_button_get_presses(mp_obj_t self_in) {
 	thingz_button_obj_t *self = MP_OBJ_TO_PTR(self_in);
     uint32_t pressed = self->presses_count;
@@ -147,6 +178,12 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_button_get_presses_obj, mp_thingz_button_get
 
 
 //ON PRESSED
+//|    def on_pressed(self, callback: Callable[Optional[Button]]) -> None:
+//|        """Register a callaback bind to press event
+//|
+//|        :param Callable[Optional[Button]] callback: The function to call when the event occurs. When called the button will be passed as paramater""" 
+//|        ...
+//|
 static mp_obj_t mp_thingz_button_on_pressed(mp_obj_t self_in, mp_obj_t function) {
 
     //  thingz_button_obj_t *self = MP_OBJ_TO_PTR(self_in);

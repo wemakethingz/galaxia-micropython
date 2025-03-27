@@ -283,6 +283,14 @@ static mp_obj_t mp_thingz_accel_del(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_accel_del_obj, mp_thingz_accel_del);
 
 //GET X
+
+//|    def get_x(self) -> float:
+//|        """
+//|        :return: the acceleration value of x axis in mG
+//|        :rtype: float
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_accel_get_x(mp_obj_t self_in) {
 	thingz_accel_obj_t *self = MP_OBJ_TO_PTR(self_in);
     float values[3];
@@ -293,6 +301,13 @@ static mp_obj_t mp_thingz_accel_get_x(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_accel_get_x_obj, mp_thingz_accel_get_x);
 
 //GET Y
+//|    def get_y(self) -> float:
+//|        """
+//|        :return: the acceleration value of y axis in mG
+//|        :rtype: float
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_accel_get_y(mp_obj_t self_in) {
 	thingz_accel_obj_t *self = MP_OBJ_TO_PTR(self_in);
     float values[3];
@@ -303,6 +318,13 @@ static mp_obj_t mp_thingz_accel_get_y(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_accel_get_y_obj, mp_thingz_accel_get_y);
 
 //GET Z
+//|    def get_z(self) -> float:
+//|        """
+//|        :return: the acceleration value of z axis in mG
+//|        :rtype: float
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_accel_get_z(mp_obj_t self_in) {
 	thingz_accel_obj_t *self = MP_OBJ_TO_PTR(self_in);
     float values[3];
@@ -313,6 +335,13 @@ static mp_obj_t mp_thingz_accel_get_z(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_accel_get_z_obj, mp_thingz_accel_get_z);
 
 //GET
+//|    def get_values(self) -> list:
+//|        """
+//|        :return: the acceleration values of the 3 axis in a list. Index 0 is X, 1 is Y, 2 is Z
+//|        :rtype: list
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_accel_get(mp_obj_t self_in) {
 	thingz_accel_obj_t *self = MP_OBJ_TO_PTR(self_in);
     float values[3];
@@ -331,6 +360,39 @@ static mp_obj_t mp_thingz_accel_get(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_accel_get_obj, mp_thingz_accel_get);
 
 //CURRENT GESTURE
+//|    def current_gesture(self) -> str:
+//|        """
+//|        Get the current gesture. Can be on of the following value:
+//|
+//|        * up
+//|
+//|        * down
+//|
+//|        * left
+//|
+//|        * right
+//|
+//|        * face up
+//|
+//|        * face down
+//|
+//|        * freefall
+//|
+//|        * 3g
+//|
+//|        * 6g
+//|
+//|        * 8g
+//|
+//|        * shake
+//|
+//|        * none
+//|
+//|        :return: the current gesture
+//|        :rtype: str
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_accel_current_gesture(mp_obj_t self_in) {
 	
     return mp_obj_new_str(thingz_accel_gesture_to_str[thingz_accel_last_gesture], strlen(thingz_accel_gesture_to_str[thingz_accel_last_gesture]));
@@ -339,6 +401,14 @@ static mp_obj_t mp_thingz_accel_current_gesture(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_accel_current_gesture_obj, mp_thingz_accel_current_gesture);
 
 //IS GESTURE
+//|    def is_gesture(self, gesture: str) -> bool:
+//|        """
+//|        :param str gesture: the gesture to test 
+//|        :return: True if the current gesture is the gesture receive as parameter
+//|        :rtype: bool
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_accel_is_gesture(mp_obj_t self_in, mp_obj_t gesture) {
 	if(mp_obj_is_str(gesture)){
         const char* str = mp_obj_str_get_str(gesture);
@@ -353,6 +423,14 @@ static mp_obj_t mp_thingz_accel_is_gesture(mp_obj_t self_in, mp_obj_t gesture) {
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_accel_is_gesture_obj, mp_thingz_accel_is_gesture);
 
 //WAS GESTURE
+//|    def was_gesture(self, gesture: str) -> bool:
+//|        """
+//|        :param str gesture: the gesture to test 
+//|        :return: True if the gesture has been active since the last call to this function
+//|        :rtype: bool
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_accel_was_gesture(mp_obj_t self_in, mp_obj_t gesture) {
 	int i;
     int8_t gesture_id = -1;
@@ -385,6 +463,13 @@ static mp_obj_t mp_thingz_accel_was_gesture(mp_obj_t self_in, mp_obj_t gesture) 
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_accel_was_gesture_obj, mp_thingz_accel_was_gesture);
 
 //GET GESTURES
+//|    def get_gestures(self) -> list:
+//|        """
+//|        :return: The history of gesture. The most recent is listed last 
+//|        :rtype: list
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_accel_get_gestures(mp_obj_t self_in) {
 
     mp_obj_t gestures[TGZ_ACCEL_GESTURE_HISTORY_LENGTH];
@@ -411,6 +496,13 @@ static mp_obj_t mp_thingz_accel_get_gestures(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_accel_get_gestures_obj, mp_thingz_accel_get_gestures);
 
 //ON GESTURE
+//|    def on_gesture(self, gesture: str, callback: Callable[Optional[str]]) -> None:
+//|        """Register a callaback bind to press event
+//|
+//|        :param str gesture: The gesture to bind the callback to
+//|        :param Callable[Optional[str]] callback: The function to call when the event occurs. When called the gesture will be passed as paramater""" 
+//|        ...
+//|
 static mp_obj_t mp_thingz_accel_on_gesture(mp_obj_t self_in, mp_obj_t gesture, mp_obj_t function) {
 
     thingz_accel_obj_t *self = MP_OBJ_TO_PTR(self_in);
@@ -475,6 +567,14 @@ MP_DEFINE_CONST_OBJ_TYPE(
 
 //------------------------------- COMPASS ----------------------------------------
 
+//| """ Thingz Magnetometer
+//| """
+//|
+//|class Compass:
+//|    """Control Galaxia's magnetometer"""
+//|
+//|
+
 //NEW
 static mp_obj_t mp_thingz_compass_make_new(const mp_obj_type_t *type,
         mp_uint_t n_args, mp_uint_t n_kw, const mp_obj_t *args) {
@@ -495,6 +595,13 @@ static mp_obj_t mp_thingz_compass_del(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_compass_del_obj, mp_thingz_compass_del);
 
 //GET X
+//|    def get_x(self) -> float:
+//|        """
+//|        :return: the magnetic field value of x axis in uT
+//|        :rtype: float
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_compass_get_x(mp_obj_t self_in) {
 	thingz_compass_obj_t *self = MP_OBJ_TO_PTR(self_in);
     thingz_compass_data_t data;
@@ -505,6 +612,13 @@ static mp_obj_t mp_thingz_compass_get_x(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_compass_get_x_obj, mp_thingz_compass_get_x);
 
 //GET Y
+//|    def get_y(self) -> float:
+//|        """
+//|        :return: the magnetic field value of y axis in uT
+//|        :rtype: float
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_compass_get_y(mp_obj_t self_in) {
 	thingz_compass_obj_t *self = MP_OBJ_TO_PTR(self_in);
     thingz_compass_data_t data;
@@ -516,6 +630,13 @@ static mp_obj_t mp_thingz_compass_get_y(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_compass_get_y_obj, mp_thingz_compass_get_y);
 
 //GET Z
+//|    def get_x(self) -> float:
+//|        """
+//|        :return: the magnetic field value of z axis in uT
+//|        :rtype: float
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_compass_get_z(mp_obj_t self_in) {
 	thingz_compass_obj_t *self = MP_OBJ_TO_PTR(self_in);
     thingz_compass_data_t data;
@@ -526,6 +647,13 @@ static mp_obj_t mp_thingz_compass_get_z(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_compass_get_z_obj, mp_thingz_compass_get_z);
 
 //GET
+//|    def get_values(self) -> list:
+//|        """
+//|        :return: the magnetic field values of the 3 axis in a list. Index 0 is X, 1 is Y, 2 is Z
+//|        :rtype: list
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_compass_get(mp_obj_t self_in) {
 	thingz_compass_obj_t *self = MP_OBJ_TO_PTR(self_in);
     thingz_compass_data_t data;
@@ -542,6 +670,13 @@ static mp_obj_t mp_thingz_compass_get(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_compass_get_obj, mp_thingz_compass_get);
 
 //HEADING
+//|    def heading(self) -> float:
+//|        """
+//|        :return: the current heading
+//|        :rtype: float
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_compass_heading(mp_obj_t self_in) {
 	thingz_compass_obj_t *self = MP_OBJ_TO_PTR(self_in);
     thingz_compass_data_t data;
@@ -557,6 +692,15 @@ static mp_obj_t mp_thingz_compass_heading(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_compass_heading_obj, mp_thingz_compass_heading);
 
 //CALIBRATE
+//|    def calibrate(self, calibration_time: int, nb_of_samples: int) -> None:
+//|        """
+//|        Calibrate the magnetometer. During the calibration the board has to be rotated along the Z axis
+//|
+//|        :param int calibration_time: Time to spend on the calibration, value is in seconds
+//|        :param int nb_of_samples: Number of sample to take
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_compass_calibrate(mp_obj_t self_in, mp_obj_t duration, mp_obj_t sample){
     thingz_compass_obj_t *self = MP_OBJ_TO_PTR(self_in);
     common_thingz_compass_calibrate(self, mp_obj_get_int(duration), mp_obj_get_int(sample));

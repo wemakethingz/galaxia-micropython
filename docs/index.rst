@@ -2,7 +2,7 @@ MicroPython documentation and references
 ========================================
 
 .. toctree::
-
+    galaxia/general.rst
     library/index.rst
     reference/index.rst
     genrst/index.rst
