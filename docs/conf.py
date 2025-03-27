@@ -67,6 +67,20 @@ source_suffix = ".rst"
 # The master toctree document.
 master_doc = "index"
 
+extensions.append('autoapi.extension')
+
+autoapi_type = 'python'
+# Uncomment this if debugging autoapi
+autoapi_keep_files = True
+autoapi_dirs = [os.path.join('micropython-stubs', x) for x in os.listdir('micropython-stubs') if os.path.exists(os.path.join("micropython-stubs", x, "__init__.pyi"))]
+print("autoapi_dirs", autoapi_dirs)
+autoapi_add_toctree_entry = False
+autoapi_options = ['members', 'undoc-members', 'private-members', 'show-inheritance', 'special-members', 'show-module-summary']
+autoapi_template_dir = 'docs/autoapi/templates'
+autoapi_python_class_content = "both"
+autoapi_python_use_implicit_namespaces = True
+autoapi_root = "shared-bindings"
+
 # General information about the project.
 project = "MicroPython"
 copyright = "- The MicroPython Documentation is Copyright © 2014-2024, Damien P. George, Paul Sokolovsky, and contributors"

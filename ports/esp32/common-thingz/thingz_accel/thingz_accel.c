@@ -253,6 +253,16 @@ void thingz_accel_new_data_callback(void *args){
 
 
 //---------------------------- ACCEL ----------------------------
+//|
+//|
+//| """ Thingz accelerometer
+//| """
+//|
+//|class Accel:
+//|    """Control Galaxia's accelerometer"""
+//|
+//|
+
 //NEW
 static mp_obj_t mp_thingz_accel_make_new(const mp_obj_type_t *type,
         mp_uint_t n_args, mp_uint_t n_kw, const mp_obj_t *args) {
