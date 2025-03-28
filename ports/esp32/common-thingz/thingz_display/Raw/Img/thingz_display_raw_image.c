@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "common-thingz/thingz_display/thingz_display_raw_image.h"
+#include "common-thingz/thingz_display/Raw/Img/thingz_display_raw_image.h"
 #include "common-thingz/thingz_screen/thingz_screen.h"
 #include "common-thingz/thingz_screen/thingz_screen_raw.h"
 
@@ -16,12 +16,16 @@
 //| class Img(x, y, path, white_replacement):
 //|    """
 //|    Create an image and print it to the screen
-//|    :param int x: X position
-//|    :param int y: Y position
-//|    :param str path: Path to the BMP file
-//|    :param int white_replacement: Color used to replace white pixels
 //|    """
-//|
+//|    def __init__(self, x:int, y:int, path:str, white_replacement:int) -> None:
+//|        """
+//|        Create an image and print it to the screen
+//|        :param int x: X position
+//|        :param int y: Y position
+//|        :param str path: Path to the BMP file
+//|        :param int white_replacement: Color used to replace white pixels
+//|        """
+//|        ...
 
 mp_obj_t mp_thingz_display_raw_img_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     mp_arg_check_num(n_args, n_kw, 4, 4, false);
@@ -50,7 +54,7 @@ mp_obj_t mp_thingz_display_raw_img_make_new(const mp_obj_type_t *type, size_t n_
     return MP_OBJ_FROM_PTR(self);
 }
 
-//|    def show(self, show) -> None:
+//|    def show(self, show:bool) -> None:
 //|        """
 //|        Show/Hide the image
 //|        
@@ -73,7 +77,7 @@ static mp_obj_t mp_thingz_display_raw_img_show(mp_obj_t self_in, mp_obj_t show) 
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_img_show_obj, mp_thingz_display_raw_img_show);
 
-//|    def x(self, pos) -> None:
+//|    def x(self, pos:int) -> None:
 //|        """
 //|        Set x position
 //|        
@@ -95,7 +99,7 @@ static mp_obj_t mp_thingz_display_raw_img_x(mp_obj_t self_in, mp_obj_t x) {
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_img_x_obj, mp_thingz_display_raw_img_x);
 
 
-//|    def y(self, pos) -> None:
+//|    def y(self, pos:int) -> None:
 //|        """
 //|        Set y position
 //|        
@@ -116,7 +120,7 @@ static mp_obj_t mp_thingz_display_raw_img_y(mp_obj_t self_in, mp_obj_t y) {
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_img_y_obj, mp_thingz_display_raw_img_y);
 
-//|    def white_replacement_color(self, color) -> None:
+//|    def white_replacement_color(self, color:bool) -> None:
 //|        """
 //|        Change all white pixels to another color
 //|        

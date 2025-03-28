@@ -1,9 +1,9 @@
 #include "common-thingz/thingz_screen/thingz_screen_raw.h"
 #include "py/obj.h"
-#include "common-thingz/thingz_display/thingz_display_raw.h"
-#include "common-thingz/thingz_display/thingz_display_raw_image.h"
-#include "common-thingz/thingz_display/thingz_display_raw_rectangle.h"
-#include "common-thingz/thingz_display/thingz_display_raw_text.h"
+#include "common-thingz/thingz_display/Raw/thingz_display_raw.h"
+#include "common-thingz/thingz_display/Raw/Img/thingz_display_raw_image.h"
+#include "common-thingz/thingz_display/Raw/Rect/thingz_display_raw_rectangle.h"
+#include "common-thingz/thingz_display/Raw/Text/thingz_display_raw_text.h"
 #include "common-thingz/thingz_screen/thingz_screen.h"
 
 
@@ -82,7 +82,7 @@ static mp_obj_t mp_thingz_display_raw_show(mp_obj_t self_in){
 
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_show_obj, mp_thingz_display_raw_show);
 
-//|    def print(self, x, y, txt) -> None:
+//|    def print(self, x:int, y:int, txt:str) -> None:
 //|        """
 //|        Print text at a given position
 //|        
@@ -138,7 +138,7 @@ static mp_obj_t mp_thingz_display_raw_print(size_t n_pos_args, const mp_obj_t *p
 }
 MP_DEFINE_CONST_FUN_OBJ_KW(mp_thingz_display_raw_print_obj, 4, mp_thingz_display_raw_print);
 
-//|    def print_bmp(self, x, y, path) -> None:
+//|    def print_bmp(self, x:int, y:int, path:str) -> None:
 //|        """
 //|        Print BMP file at a given position
 //|        

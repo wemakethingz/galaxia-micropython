@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "common-thingz/thingz_display/thingz_display_raw_text.h"
+#include "common-thingz/thingz_display/Raw/Text/thingz_display_raw_text.h"
 #include "common-thingz/thingz_screen/thingz_screen.h"
 #include "common-thingz/thingz_screen/thingz_screen_raw.h"
 

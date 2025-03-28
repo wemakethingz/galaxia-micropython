@@ -1,8 +1,8 @@
 #include "thingz_display.h"
 #include "thingz_display_mode.h"
-#include "thingz_display_plot.h"
-#include "thingz_display_console.h"
-#include "thingz_display_raw.h"
+#include "common-thingz/thingz_display/Plot/thingz_display_plot.h"
+#include "common-thingz/thingz_display/Console/thingz_display_console.h"
+#include "common-thingz/thingz_display/Raw/thingz_display_raw.h"
 
 #include "common-thingz/thingz_screen/thingz_screen.h"
 

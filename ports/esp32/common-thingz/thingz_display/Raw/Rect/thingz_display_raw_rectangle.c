@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "common-thingz/thingz_display/thingz_display_raw_rectangle.h"
+#include "common-thingz/thingz_display/Raw/Rect/thingz_display_raw_rectangle.h"
 #include "common-thingz/thingz_screen/thingz_screen.h"
 #include "common-thingz/thingz_screen/thingz_screen_raw.h"
 
@@ -12,15 +12,21 @@
 //| """ Thingz Display Raw Rect
 //| """
 //|
-//| class Rect(x, y, width, height, color):
+//| class Rect:
 //|    """
 //|    Create an rectangle and print it to the screen
-//|    :param int x: X position
-//|    :param int y: Y position
-//|    :param int width: Width of the rectangle
-//|    :param int height: Height of the rectangle
 //|    """
 //|
+//|    def __init__(self, x:int, y:int, width:int, height:int, color:int) -> None:
+//|        """
+//|        Create a rectangle and print it to the screen
+//|        :param int x: X position
+//|        :param int y: Y position
+//|        :param int width: width
+//|        :param int height: height
+//|        :param int color: Color
+//|        """
+//|        ...
 mp_obj_t mp_thingz_display_raw_rectangle_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     mp_arg_check_num(n_args, n_kw, 5, 5, false);
     // get the wanted pin object
@@ -50,7 +56,7 @@ mp_obj_t mp_thingz_display_raw_rectangle_make_new(const mp_obj_type_t *type, siz
     thingz_screen_raw_add_show_obj(&(thingz_screen.raw), self);
     return MP_OBJ_FROM_PTR(self);
 }
-//|    def show(self, show) -> None:
+//|    def show(self, show:bool) -> None:
 //|        """
 //|        Show/Hide the rectangle
 //|        
@@ -73,7 +79,7 @@ static mp_obj_t mp_thingz_display_raw_rectangle_show(mp_obj_t self_in, mp_obj_t 
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_rectangle_show_obj, mp_thingz_display_raw_rectangle_show);
 
-//|    def x(self, pos) -> None:
+//|    def x(self, pos:int) -> None:
 //|        """
 //|        Set x position
 //|        
@@ -94,7 +100,7 @@ static mp_obj_t mp_thingz_display_raw_rectangle_x(mp_obj_t self_in, mp_obj_t x) 
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_rectangle_x_obj, mp_thingz_display_raw_rectangle_x);
 
-//|    def y(self, pos) -> None:
+//|    def y(self, pos:int) -> None:
 //|        """
 //|        Set y position
 //|        
@@ -116,7 +122,7 @@ static mp_obj_t mp_thingz_display_raw_rectangle_y(mp_obj_t self_in, mp_obj_t y) 
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_rectangle_y_obj, mp_thingz_display_raw_rectangle_y);
 
 
-//|    def color(self, color) -> None:
+//|    def color(self, color:int) -> None:
 //|        """
 //|        Set rectangle color
 //|        
