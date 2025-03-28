@@ -1,6 +1,6 @@
 """Ethernet module
 
-Add ethernet connectivity using Thingz ethernet module
+Add ethernet connectivity using Thingz ethernet extension board
 
 
 """

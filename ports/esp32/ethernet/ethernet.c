@@ -173,7 +173,7 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
 
 //| """Ethernet module
 //|
-//| Add ethernet connectivity using Thingz ethernet module
+//| Add ethernet connectivity using Thingz ethernet extension board
 //|
 //|
 //| """
