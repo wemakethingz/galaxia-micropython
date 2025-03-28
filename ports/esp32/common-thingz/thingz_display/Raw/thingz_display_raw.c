@@ -1,9 +1,9 @@
 #include "common-thingz/thingz_screen/thingz_screen_raw.h"
 #include "py/obj.h"
 #include "common-thingz/thingz_display/Raw/thingz_display_raw.h"
-#include "common-thingz/thingz_display/Raw/Img/thingz_display_raw_image.h"
-#include "common-thingz/thingz_display/Raw/Rect/thingz_display_raw_rectangle.h"
-#include "common-thingz/thingz_display/Raw/Text/thingz_display_raw_text.h"
+#include "common-thingz/thingz_display/Raw/thingz_display_raw_image.h"
+#include "common-thingz/thingz_display/Raw/thingz_display_raw_rectangle.h"
+#include "common-thingz/thingz_display/Raw/thingz_display_raw_text.h"
 #include "common-thingz/thingz_screen/thingz_screen.h"
 
 

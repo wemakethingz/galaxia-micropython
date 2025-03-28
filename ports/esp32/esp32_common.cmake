@@ -135,9 +135,9 @@ list(APPEND MICROPY_SOURCE_PORT
     common-thingz/thingz_display/Console/thingz_display_console.c
     common-thingz/thingz_display/Plot/thingz_display_plot.c
     common-thingz/thingz_display/Raw/thingz_display_raw.c
-    common-thingz/thingz_display/Raw/Img/thingz_display_raw_image.c
-    common-thingz/thingz_display/Raw/Rect/thingz_display_raw_rectangle.c
-    common-thingz/thingz_display/Raw/Text/thingz_display_raw_text.c
+    common-thingz/thingz_display/Raw/thingz_display_raw_image.c
+    common-thingz/thingz_display/Raw/thingz_display_raw_rectangle.c
+    common-thingz/thingz_display/Raw/thingz_display_raw_text.c
     common-thingz/thingz_accel/thingz_accel.c
     common-thingz/thingz_i2c/thingz_i2c.c
     common-thingz/thingz_memory/thingz_memory.c

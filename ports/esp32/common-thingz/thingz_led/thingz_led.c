@@ -262,7 +262,15 @@ static uint32_t thingz_led_read_light(thingz_led_obj_t* led){
 
     return (uint32_t)r;
 }
-
+//|
+//|
+//| """ Thingz LED
+//| """
+//|
+//| class Led:
+//|    """Control Galaxia's RGB LED"""
+//|
+//|
 
 //NEW
 static mp_obj_t mp_thingz_led_make_new(const mp_obj_type_t *type,
@@ -284,6 +292,15 @@ static mp_obj_t mp_thingz_led_del(mp_obj_t self_in) {
 
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_led_del_obj, mp_thingz_led_del);
 
+//SET COLORS
+//|    def set_colors(self, red: int, green: int, blue: int) -> None:
+//|        """Set red, green and blue values
+//|
+//|        :param int red: The red value between 0 and 255
+//|        :param int green: The green value between 0 and 255
+//|        :param int blue: The blue value between 0 and 255""" 
+//|        ...
+//|
 
 //SET COLORS
 static const mp_arg_t mp_thingz_led_set_colors_args[] = {
@@ -315,7 +332,12 @@ static mp_obj_t mp_thingz_led_set_colors(uint n_args, const mp_obj_t *args, mp_m
 
 static MP_DEFINE_CONST_FUN_OBJ_KW(mp_thingz_led_set_colors_obj, 3, mp_thingz_led_set_colors);
 
-
+//|    def set_red(self, red: int) -> None:
+//|        """Set red value
+//|
+//|        :param int red: The red value between 0 and 255""" 
+//|        ...
+//|
 //SET RED
 static const mp_arg_t mp_thingz_led_set_red_args[] = {
     { MP_QSTR_red,      MP_ARG_REQUIRED | MP_ARG_INT, {.u_obj = mp_const_none}},
@@ -339,6 +361,12 @@ static mp_obj_t mp_thingz_led_set_red(uint n_args, const mp_obj_t *args, mp_map_
 
 static MP_DEFINE_CONST_FUN_OBJ_KW(mp_thingz_led_set_red_obj, 1, mp_thingz_led_set_red);
 
+//|    def set_green(self, green: int) -> None:
+//|        """Set green value
+//|
+//|        :param int green: The green value between 0 and 255""" 
+//|        ...
+//|
 //SET GREEN
 static const mp_arg_t mp_thingz_led_set_green_args[] = {
     { MP_QSTR_green,      MP_ARG_REQUIRED | MP_ARG_INT, {.u_obj = mp_const_none}},
@@ -363,6 +391,12 @@ static mp_obj_t mp_thingz_led_set_green(uint n_args, const mp_obj_t *args, mp_ma
 static MP_DEFINE_CONST_FUN_OBJ_KW(mp_thingz_led_set_green_obj, 1, mp_thingz_led_set_green);
 
 //SET BLUE
+//|    def set_blue(self, blue: int) -> None:
+//|        """Set blue value
+//|
+//|        :param int blue: The blue value between 0 and 255""" 
+//|        ...
+//|
 static const mp_arg_t mp_thingz_led_set_blue_args[] = {
     { MP_QSTR_blue,      MP_ARG_REQUIRED | MP_ARG_INT, {.u_obj = mp_const_none}},
 };
@@ -386,6 +420,15 @@ static mp_obj_t mp_thingz_led_set_blue(uint n_args, const mp_obj_t *args, mp_map
 static MP_DEFINE_CONST_FUN_OBJ_KW(mp_thingz_led_set_blue_obj, 1, mp_thingz_led_set_blue);
 
 //GET RED
+//|    def get_red(self) -> int:
+//|        """
+//|        Get red value
+//|
+//|        :return: The red value between 0 and 255
+//|        :rtype: int
+//|        """ 
+//|        ...
+//|
 static mp_obj_t mp_thingz_led_get_red(mp_obj_t self_in) {
 	thingz_led_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -396,6 +439,15 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_led_get_red_obj, mp_thingz_led_get_red);
 
 
 //GET GREEN
+//|    def get_green(self) -> int:
+//|        """
+//|        Get green value
+//|
+//|        :return: The green value between 0 and 255
+//|        :rtype: int
+//|        """ 
+//|        ...
+//|
 static mp_obj_t mp_thingz_led_get_green(mp_obj_t self_in) {
 	thingz_led_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -405,6 +457,15 @@ static mp_obj_t mp_thingz_led_get_green(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_led_get_green_obj, mp_thingz_led_get_green);
 
 //GET BLUE
+//|    def get_blue(self) -> int:
+//|        """
+//|        Get blue value
+//|
+//|        :return: The blue value between 0 and 255
+//|        :rtype: int
+//|        """ 
+//|        ...
+//|
 static mp_obj_t mp_thingz_led_get_blue(mp_obj_t self_in) {
 	thingz_led_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -414,6 +475,15 @@ static mp_obj_t mp_thingz_led_get_blue(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_led_get_blue_obj, mp_thingz_led_get_blue);
 
 //READ_LIGHT_LEVEL
+//|    def read_light_level(self) -> int:
+//|        """
+//|        Get the current light level
+//|
+//|        :return: The light level between 0 (dark) and 100 (luminous)
+//|        :rtype: int
+//|        """ 
+//|        ...
+//|
 static mp_obj_t mp_thingz_led_read_light(mp_obj_t self_in) {
     // return mp_obj_new_int(0);
 	thingz_led_obj_t *self = MP_OBJ_TO_PTR(self_in);

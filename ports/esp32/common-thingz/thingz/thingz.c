@@ -631,8 +631,13 @@ void thingz_print_filename(const char* name){
 //| """
 //| Galaxia's wireless communication
 //| This object is an instance of `Radio`
+//|
 //| """
-
+//| display: Display
+//| """
+//| Galaxia's LCD display
+//| This object is an instance of `Display`
+//| """
 
 //GET TEMP
 //| def temperature() -> int:

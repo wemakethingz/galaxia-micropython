@@ -6,9 +6,9 @@
 #include "thingz_screen_repl.h"
 #include "thingz_screen.h"
 #include "common-thingz/thingz/thingz.h"
-#include "common-thingz/thingz_display/Raw/Img/thingz_display_raw_image.h"
-#include "common-thingz/thingz_display/Raw/Rect/thingz_display_raw_rectangle.h"
-#include "common-thingz/thingz_display/Raw/Text/thingz_display_raw_text.h"
+#include "common-thingz/thingz_display/Raw/thingz_display_raw_image.h"
+#include "common-thingz/thingz_display/Raw/thingz_display_raw_rectangle.h"
+#include "common-thingz/thingz_display/Raw/thingz_display_raw_text.h"
 
 
 #include "string.h"

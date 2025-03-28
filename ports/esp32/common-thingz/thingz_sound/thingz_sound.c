@@ -314,7 +314,15 @@ static void thingz_play_sample(thingz_sound_obj_t* sound){
 
     
 }
-
+//|
+//|
+//| """ Thingz Sound
+//| """
+//|
+//| class Sound:
+//|    """Output sound using Galaxia's Jack connector"""
+//|
+//|
 //NEW
 static mp_obj_t mp_thingz_sound_make_new(const mp_obj_type_t *type,
         mp_uint_t n_args, mp_uint_t n_kw, const mp_obj_t *args) {
@@ -337,6 +345,13 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_sound_del_obj, mp_thingz_sound_del);
 
 
 //PLAY
+//|    def play(self, on: bool, freq: int) -> None:
+//|        """
+//|        :param bool on: Enable frequency generation onto the jack
+//|        :param int freq: The frequency to generate in Hz
+//|        """
+//|        ...
+//|
 static const mp_arg_t mp_thingz_sound_play_args[] = {
     { MP_QSTR_on,      MP_ARG_REQUIRED | MP_ARG_BOOL, {.u_obj = mp_const_none}},
     { MP_QSTR_freq,    MP_ARG_INT, {.u_int = 440}},
@@ -368,6 +383,12 @@ static mp_obj_t mp_thingz_sound_play(uint n_args, const mp_obj_t *args, mp_map_t
 static MP_DEFINE_CONST_FUN_OBJ_KW(mp_thingz_sound_play_obj, 2, mp_thingz_sound_play);
 
 //SET FREQUENCY
+//|    def set_frequency(self, freq: int) -> None:
+//|        """
+//|        :param int freq: The frequency to generate in Hz
+//|        """
+//|        ...
+//|
 static const mp_arg_t mp_thingz_sound_set_freq_args[] = {
     { MP_QSTR_freq,      MP_ARG_REQUIRED | MP_ARG_OBJ, {.u_obj = mp_const_none}},
 };
@@ -404,6 +425,14 @@ static mp_obj_t mp_thingz_sound_set_freq(uint n_args, const mp_obj_t *args, mp_m
 static MP_DEFINE_CONST_FUN_OBJ_KW(mp_thingz_sound_set_freq_obj, 2, mp_thingz_sound_set_freq);
 
 //SET VOLUME
+//|    def set_volume(self, volume: int) -> None:
+//|        """
+//|        Set the volume of the sound
+//|
+//|        :param int volume: The volume of the sound between 0 and 100
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_sound_set_volume(mp_obj_t self_in, mp_obj_t volume) {
 
     thingz_sound_obj_t *self = MP_OBJ_TO_PTR(self_in);
@@ -436,6 +465,15 @@ static mp_obj_t mp_thingz_sound_deinit(mp_obj_t self_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_sound_deinit_obj, mp_thingz_sound_deinit);
 
+
+//|    def play_sample(self, filename: str) -> None:
+//|        """
+//|        Play a sound sample. Sample must be in wav format
+//|
+//|        :param str filename: The path to file
+//|        """
+//|        ...
+//|
 static const mp_arg_t mp_thingz_sound_play_sample_args[] = {
     { MP_QSTR_filename,      MP_ARG_REQUIRED | MP_ARG_OBJ, {.u_obj = mp_const_none}},
 };

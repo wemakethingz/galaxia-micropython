@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "common-thingz/thingz_display/Raw/Img/thingz_display_raw_image.h"
+#include "common-thingz/thingz_display/Raw/thingz_display_raw_image.h"
 #include "common-thingz/thingz_screen/thingz_screen.h"
 #include "common-thingz/thingz_screen/thingz_screen_raw.h"
 
@@ -13,13 +13,14 @@
 //| """ Thingz Display Raw Img
 //| """
 //|
-//| class Img(x, y, path, white_replacement):
+//| class Img:
 //|    """
 //|    Create an image and print it to the screen
 //|    """
 //|    def __init__(self, x:int, y:int, path:str, white_replacement:int) -> None:
 //|        """
 //|        Create an image and print it to the screen
+//|
 //|        :param int x: X position
 //|        :param int y: Y position
 //|        :param str path: Path to the BMP file

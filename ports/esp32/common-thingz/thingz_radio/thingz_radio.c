@@ -234,7 +234,14 @@ static int thingz_radio_set_channel(thingz_radio_obj_t* radio, uint8_t channel){
     free(broadcast);
     return 0;
 }
-
+//|
+//| """ Thingz Radio
+//| """
+//|
+//| class Radio:
+//|    """Send and receive messages between boards"""
+//|
+//|
 //NEW
 static mp_obj_t mp_thingz_radio_make_new(const mp_obj_type_t *type,
         mp_uint_t n_args, mp_uint_t n_kw,const mp_obj_t *args) {
@@ -257,6 +264,14 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_radio_del_obj, mp_thingz_radio_del);
 
 
 //SEND
+//|    def send(self, data: str) -> None:
+//|        """
+//|        Send a message. The message is broadcasted, the board around, if on the same channel, will receive it
+//|
+//|        :param str data: The data to send
+//|        """
+//|        ...
+//|
 static const mp_arg_t mp_thingz_radio_send_args[] = {
     { MP_QSTR_data,      MP_ARG_REQUIRED, {.u_obj = mp_const_none}},
 };
@@ -341,6 +356,15 @@ static mp_obj_t mp_thingz_radio_send(uint n_args, const mp_obj_t *args, mp_map_t
 static MP_DEFINE_CONST_FUN_OBJ_KW(mp_thingz_radio_send_obj, 1, mp_thingz_radio_send);
 
 //RECEIVE
+//|    def receive(self) -> str:
+//|        """
+//|        Wait for data to be received
+//|
+//|        :return: The data received
+//|        :rtype: str
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_radio_receive(mp_obj_t self_in) {
     THGZRadioReceiveEvent_t arg;
     if(xQueueReceive(receive_queue, &arg, 0)){
@@ -358,6 +382,14 @@ static mp_obj_t mp_thingz_radio_receive(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_radio_receive_obj, mp_thingz_radio_receive);
 
 //SET CHANNEL
+//|    def set_chanel(self, channel: int) -> None:
+//|        """
+//|        Change the channel used by the radio module
+//|
+//|        :param int channel: The channel between 1 and 10
+//|        """
+//|        ...
+//|
 static const mp_arg_t mp_thingz_radio_set_channel_args[] = {
     { MP_QSTR_channel,      MP_ARG_REQUIRED | MP_ARG_INT, {.u_obj = mp_const_none}},
 };
@@ -381,6 +413,15 @@ static MP_DEFINE_CONST_FUN_OBJ_KW(mp_thingz_radio_set_channel_obj, 1, mp_thingz_
 
 
 //GET CHANNEL
+//|    def get_channel(self) -> int:
+//|        """
+//|        Get the channel used by the radio module
+//|
+//|        :return: The channel used by the radio module
+//|        :rtype: int
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_radio_get_channel(mp_obj_t self_in) {
 	thingz_radio_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
