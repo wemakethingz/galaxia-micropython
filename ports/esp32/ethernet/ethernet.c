@@ -303,6 +303,7 @@ static mp_obj_t ethernet_active(size_t n_args, const mp_obj_t *args) {
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(ethernet_active_obj, 0, 1, ethernet_active);
 //| def status(self) -> int:
 //|     """Return the current status of the driver can be:
+//|
 //|     * INITIALIZED: 0, intial status
 //|     * STARTED: 1, the driver is started and the module was found
 //|     * STOPPED: 2, the driver is stopped

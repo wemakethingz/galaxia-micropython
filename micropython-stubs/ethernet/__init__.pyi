@@ -16,6 +16,7 @@ def active(self, state: bool) -> True:
 
 def status(self) -> int:
     """Return the current status of the driver can be:
+
     * INITIALIZED: 0, intial status
     * STARTED: 1, the driver is started and the module was found
     * STOPPED: 2, the driver is stopped
