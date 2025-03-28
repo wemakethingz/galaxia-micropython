@@ -51,10 +51,6 @@ class Raw:
 """
 
 class Img:
-    """
-    Create an image and print it to the screen
-    """
-
     def __init__(self, x: int, y: int, path: str, white_replacement: int) -> None:
         """
         Create an image and print it to the screen
@@ -139,13 +135,10 @@ class Img:
 """
 
 class Rect:
-    """
-    Create an rectangle and print it to the screen
-    """
-
     def __init__(self, x: int, y: int, width: int, height: int, color: int) -> None:
         """
         Create a rectangle and print it to the screen
+
         :param int x: X position
         :param int y: Y position
         :param int width: width
@@ -220,5 +213,93 @@ class Rect:
     def get_color(self) -> int:
         """
         Get color
+        """
+        ...
+
+""" Thingz Display Raw Text
+"""
+
+class Text:
+    def __init__(self, x: int, y: int, text: str, color: int) -> None:
+        """
+        Create an image and print it to the screen
+
+        :param int x: X position
+        :param int y: Y position
+        :param str text: text
+        :param int color: color
+        """
+
+    def show(self, show: bool) -> None:
+        """
+        Show/Hide the text
+
+        :param bool show: Show the text if True hide if False
+        """
+        ...
+
+    def x(self, pos: int) -> None:
+        """
+        Set x position
+
+        :param int pos: x position
+        """
+        ...
+
+    def y(self, pos: int) -> None:
+        """
+        Set y position
+
+        :param int pos: y position
+        """
+        ...
+
+    def set_text(self, text: str) -> None:
+        """
+        Set text
+
+        :param str text: text
+        """
+        ...
+
+    def get_show(self) -> bool:
+        """
+        Return True is text is shown else False
+        """
+        ...
+
+    def get_x(self) -> int:
+        """
+        Get x position
+        """
+        ...
+
+    def get_y(self) -> int:
+        """
+        Get y position
+        """
+        ...
+
+    def get_width(self) -> int:
+        """
+        Get text width
+        """
+        ...
+
+    def get_height(self) -> int:
+        """
+        Get text height
+        """
+        ...
+
+    def get_color(self) -> int:
+        """
+        Get text color
+        """
+        ...
+
+    def get_text(self) -> int:
+        """
+        Get text
         """
         ...

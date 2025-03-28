@@ -13,13 +13,11 @@
 //| """
 //|
 //| class Rect:
-//|    """
-//|    Create an rectangle and print it to the screen
-//|    """
 //|
 //|    def __init__(self, x:int, y:int, width:int, height:int, color:int) -> None:
 //|        """
 //|        Create a rectangle and print it to the screen
+//|
 //|        :param int x: X position
 //|        :param int y: Y position
 //|        :param int width: width

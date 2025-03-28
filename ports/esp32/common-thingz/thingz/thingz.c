@@ -633,10 +633,18 @@ void thingz_print_filename(const char* name){
 //| This object is an instance of `Radio`
 //|
 //| """
+//|
 //| display: Display
 //| """
 //| Galaxia's LCD display
 //| This object is an instance of `Display`
+//| """
+//|
+//| 
+//| log: Log
+//| """
+//| Save data to Galaxia memory
+//| This object is an instance of `Log`
 //| """
 
 //GET TEMP

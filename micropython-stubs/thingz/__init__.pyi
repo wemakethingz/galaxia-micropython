@@ -73,10 +73,17 @@ Galaxia's wireless communication
 This object is an instance of `Radio`
 
 """
+
 display: Display
 """
 Galaxia's LCD display
 This object is an instance of `Display`
+"""
+
+log: Log
+"""
+Save data to Galaxia memory
+This object is an instance of `Log`
 """
 
 def temperature() -> int:

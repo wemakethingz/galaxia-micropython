@@ -14,9 +14,7 @@
 //| """
 //|
 //| class Img:
-//|    """
-//|    Create an image and print it to the screen
-//|    """
+//|
 //|    def __init__(self, x:int, y:int, path:str, white_replacement:int) -> None:
 //|        """
 //|        Create an image and print it to the screen

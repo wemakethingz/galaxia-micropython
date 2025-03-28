@@ -73,7 +73,15 @@ void thingz_log_deinit(thingz_log_obj_t* log){
     log->columns_len = 0;
 }
 
-
+//|
+//|
+//| """ Thingz Log
+//| """
+//|
+//| class Log:
+//|    """Save data inside Galaxia internal memory. The data is saved as CSV, at each boot the Galaxia transfer the internal file to USB mass storage as data.csv"""
+//|
+//|
 //NEW
 static mp_obj_t mp_thingz_log_make_new(const mp_obj_type_t *type,
         mp_uint_t n_args, mp_uint_t n_kw, const mp_obj_t *args) {
@@ -94,6 +102,13 @@ static mp_obj_t mp_thingz_log_del(mp_obj_t self_in) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_log_del_obj, mp_thingz_log_del);
 
 // //ADD
+//|    def add(self, data: list) -> None:
+//|        """Add data to log. The data must be in a list, each element is a tuple composed of the name of the column and the data associeted.
+//|        OS EFBIG exception can be thrown if no space left in memory. 
+//|
+//|        :param list data: The data to add""" 
+//|        ...
+//|
 static mp_obj_t mp_thingz_log_add(mp_obj_t self_in, mp_obj_list_t* list) {
 	thingz_log_obj_t *self = MP_OBJ_TO_PTR(self_in);
 
@@ -134,6 +149,10 @@ static mp_obj_t mp_thingz_log_add(mp_obj_t self_in, mp_obj_list_t* list) {
 
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_log_add_obj, mp_thingz_log_add);
 
+//|    def delete(self) -> None:
+//|        """Erase all the data saved in log.""" 
+//|        ...
+//|
 static mp_obj_t mp_thingz_log_delete(mp_obj_t self_in){
     thingz_log_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if(esp_spiffs_format("storage") == 0){
@@ -166,6 +185,12 @@ static mp_obj_t mp_thingz_log_delete(mp_obj_t self_in){
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_log_delete_obj, mp_thingz_log_delete);
 
 // SET COLUMNS
+//|    def set_columns(self, data: list) -> None:
+//|        """Create the columns of the CSV. The log reset every time the columns are redefined. 
+//|
+//|        :param list data: The columns to create""" 
+//|        ...
+//|
 static mp_obj_t mp_thingz_log_set_columns(mp_obj_t self_in, mp_obj_list_t* list) {
 	thingz_log_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if(!mp_obj_is_type(list, &mp_type_list)){

@@ -8,7 +8,22 @@
 #include "py/obj.h"
 #include "py/runtime.h"
 
-
+//|
+//| """ Thingz Display Raw Text
+//| """
+//|
+//| class Text:
+//|
+//|    def __init__(self, x:int, y:int, text:str, color:int) -> None:
+//|        """
+//|        Create an image and print it to the screen
+//|
+//|        :param int x: X position
+//|        :param int y: Y position
+//|        :param str text: text
+//|        :param int color: color
+//|        """
+//|  
 mp_obj_t mp_thingz_display_raw_text_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     mp_arg_check_num(n_args, n_kw, 4, 4, false);
     // get the wanted pin object
@@ -38,6 +53,14 @@ mp_obj_t mp_thingz_display_raw_text_make_new(const mp_obj_type_t *type, size_t n
     return MP_OBJ_FROM_PTR(self);
 }
 
+//|    def show(self, show:bool) -> None:
+//|        """
+//|        Show/Hide the text
+//|        
+//|        :param bool show: Show the text if True hide if False
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_text_show(mp_obj_t self_in, mp_obj_t show) {
     thingz_display_raw_text_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if(!mp_obj_is_bool(show)){
@@ -53,7 +76,14 @@ static mp_obj_t mp_thingz_display_raw_text_show(mp_obj_t self_in, mp_obj_t show)
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_text_show_obj, mp_thingz_display_raw_text_show);
 
-
+//|    def x(self, pos:int) -> None:
+//|        """
+//|        Set x position
+//|        
+//|        :param int pos: x position
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_text_x(mp_obj_t self_in, mp_obj_t x) {
     thingz_display_raw_text_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if(!mp_obj_is_int(x)){
@@ -67,6 +97,14 @@ static mp_obj_t mp_thingz_display_raw_text_x(mp_obj_t self_in, mp_obj_t x) {
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_text_x_obj, mp_thingz_display_raw_text_x);
 
+//|    def y(self, pos:int) -> None:
+//|        """
+//|        Set y position
+//|        
+//|        :param int pos: y position
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_text_y(mp_obj_t self_in, mp_obj_t y) {
     thingz_display_raw_text_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if(!mp_obj_is_int(y)){
@@ -80,6 +118,14 @@ static mp_obj_t mp_thingz_display_raw_text_y(mp_obj_t self_in, mp_obj_t y) {
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_text_y_obj, mp_thingz_display_raw_text_y);
 
+//|    def set_text(self, text:str) -> None:
+//|        """
+//|        Set text
+//|        
+//|        :param str text: text
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_text_set_text(mp_obj_t self_in, mp_obj_t text) {
     thingz_display_raw_text_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if(!mp_obj_is_str(text)){
@@ -94,6 +140,12 @@ static mp_obj_t mp_thingz_display_raw_text_set_text(mp_obj_t self_in, mp_obj_t t
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_text_set_text_obj, mp_thingz_display_raw_text_set_text);
 
+//|    def get_show(self) -> bool:
+//|        """
+//|        Return True is text is shown else False
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_text_get_show(mp_obj_t self_in) {
     thingz_display_raw_text_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -101,6 +153,12 @@ static mp_obj_t mp_thingz_display_raw_text_get_show(mp_obj_t self_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_text_get_show_obj, mp_thingz_display_raw_text_get_show);
 
+//|    def get_x(self) -> int:
+//|        """
+//|        Get x position
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_text_get_x(mp_obj_t self_in) {
     thingz_display_raw_text_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -108,6 +166,12 @@ static mp_obj_t mp_thingz_display_raw_text_get_x(mp_obj_t self_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_text_get_x_obj, mp_thingz_display_raw_text_get_x);
 
+//|    def get_y(self) -> int:
+//|        """
+//|        Get y position
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_text_get_y(mp_obj_t self_in) {
     thingz_display_raw_text_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -115,6 +179,12 @@ static mp_obj_t mp_thingz_display_raw_text_get_y(mp_obj_t self_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_text_get_y_obj, mp_thingz_display_raw_text_get_y);
 
+//|    def get_width(self) -> int:
+//|        """
+//|        Get text width
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_text_get_width(mp_obj_t self_in) {
     thingz_display_raw_text_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -122,6 +192,12 @@ static mp_obj_t mp_thingz_display_raw_text_get_width(mp_obj_t self_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_text_get_width_obj, mp_thingz_display_raw_text_get_width);
 
+//|    def get_height(self) -> int:
+//|        """
+//|        Get text height
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_text_get_height(mp_obj_t self_in) {
     thingz_display_raw_text_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -129,6 +205,12 @@ static mp_obj_t mp_thingz_display_raw_text_get_height(mp_obj_t self_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_text_get_height_obj, mp_thingz_display_raw_text_get_height);
 
+//|    def get_color(self) -> int:
+//|        """
+//|        Get text color
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_text_get_color(mp_obj_t self_in) {
     thingz_display_raw_text_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
@@ -136,6 +218,12 @@ static mp_obj_t mp_thingz_display_raw_text_get_color(mp_obj_t self_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_text_get_color_obj, mp_thingz_display_raw_text_get_color);
 
+//|    def get_text(self) -> int:
+//|        """
+//|        Get text
+//|        """
+//|        ...
+//|
 static mp_obj_t mp_thingz_display_raw_text_get_text(mp_obj_t self_in) {
     thingz_display_raw_text_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
