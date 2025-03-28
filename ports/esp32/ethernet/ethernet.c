@@ -171,6 +171,13 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
     eth_status = ETH_GOT_IP;
 }
 
+//| """Ethernet module
+//|
+//| Add ethernet connectivity using Thingz ethernet module
+//|
+//|
+//| """
+
 static mp_obj_t ethernet___init__(void) {
     ethernet_obj_t *self = &ethernet_obj;
     gpio_install_isr_service(0);
@@ -261,6 +268,14 @@ static mp_obj_t ethernet___init__(void) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(ethernet___init___obj, ethernet___init__);
 
+
+//| def active(self, state:bool) -> True:
+//|     """If called with no args, return the current state of the ethernet driver.
+//|     Else start or stop the ethernet driver 
+//|
+//|     :param bool state: activate the ethernet driver if True else stop it""" 
+//|     ...
+//|
 static mp_obj_t ethernet_active(size_t n_args, const mp_obj_t *args) {
     ethernet_obj_t *self = &ethernet_obj;
 
@@ -286,18 +301,48 @@ static mp_obj_t ethernet_active(size_t n_args, const mp_obj_t *args) {
     return mp_obj_new_bool(self->active);
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(ethernet_active_obj, 0, 1, ethernet_active);
-
+//| def status(self) -> int:
+//|     """Return the current status of the driver can be:
+//|     * INITIALIZED: 0, intial status
+//|     * STARTED: 1, the driver is started and the module was found
+//|     * STOPPED: 2, the driver is stopped
+//|     * CONNECTED: 3, ethernet connection established
+//|     * DISCONNECTED: 4, ethernet connection lost
+//|     * GOT_IP: 5, ethernet connection established and IP address set
+//|     """
+//| 
+//|     ...
+//|
 static mp_obj_t ethernet_status(void) {
     return MP_OBJ_NEW_SMALL_INT(eth_status);
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(ethernet_status_obj, ethernet_status);
 
+//| def isconnected(self) -> bool:
+//|     """Return True if IP is set
+//|     """
+//| 
+//|     ...
+//|
 static mp_obj_t ethernet_isconnected(void) {
     ethernet_obj_t *self = &ethernet_obj;
     return mp_obj_new_bool(self->active && (eth_status == ETH_GOT_IP));
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(ethernet_isconnected_obj, ethernet_isconnected);
 
+//| def ifconfig(self, ip_config: list/tuple/str) -> int:
+//|     """If called with no arg, return the current IP address.
+//|     Else set the interface configuration
+//|         
+//|     :param list/tuple/str ip_config: Can be "dhcp" to configure the interface using DHCP or a list/tuple with the following args:
+//|     * ip address: str
+//|     * netmask: str
+//|     * gateway: str
+//|     * DNS: str
+//|     """
+//| 
+//|     ...
+//|
 static mp_obj_t ethernet_ifconfig(size_t n_args, const mp_obj_t *args) {
     ethernet_obj_t *self = &ethernet_obj;
 
