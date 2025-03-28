@@ -5,6 +5,8 @@ Galaxia
 
 Galaxia board is part of the esp32 port. Every feature of this port is included, additional modules are available to interact with Galaxia specific components.
 
+.. image:: img/pinout_galaxia_grove.jpg
+.. image:: img/pinout_galaxia_microbit.jpg
 
 Additional modules
 -------------------
