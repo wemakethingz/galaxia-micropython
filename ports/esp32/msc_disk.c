@@ -127,6 +127,7 @@ int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t *
             if(!pyexec_repl_active){
                 mp_sched_reload_interrupt();
             }else{
+                ringbuf_put(&stdin_ringbuf, 3);
                 ringbuf_put(&stdin_ringbuf, 4);
             }
         }

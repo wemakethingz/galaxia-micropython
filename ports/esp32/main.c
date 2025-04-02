@@ -40,6 +40,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_psram.h"
+#include "esp_debug_helpers.h"
 
 #include "py/cstack.h"
 #include "py/nlr.h"
@@ -113,6 +114,12 @@ time_t platform_mbedtls_time(time_t *timer) {
     return tv.tv_sec + TIMEUTILS_SECONDS_1970_TO_2000;
 }
 
+static void _flush_ringbuffer(){
+    while(ringbuf_get(&stdin_ringbuf) != -1){
+
+    }
+}
+
 void mp_task(void *pvParameter) {
     volatile uint32_t sp = (uint32_t)esp_cpu_get_sp();
     #if MICROPY_PY_THREAD
@@ -180,17 +187,20 @@ soft_reset:
     debug_mode_start();
 
     #endif
-
-    #if MICROPY_THINGZ_SCREEN
-    MP_STATE_VM(dupterm_objs[0]) = &thingz_screen;
-    #endif
-
     
     // run boot-up scripts
     #if MICROPY_HW_USB_MSC
     int ret = pyexec_frozen_module("_boot_fat.py", false);
     #else
     int ret = pyexec_frozen_module("_boot.py", false);
+    #endif
+    //Reload exception can interrupt boot_fat, if so / will not be accessible
+    if (ret & PYEXEC_FORCED_EXIT) {
+        goto soft_reset_exit;
+    }
+
+    #if MICROPY_THINGZ_SCREEN
+    MP_STATE_VM(dupterm_objs[0]) = &thingz_screen;
     #endif
 
     nlr_buf_t nlr;
@@ -220,23 +230,16 @@ soft_reset:
         fail = 1;
     }
 
-    //Reload interupt can occur, if so we reload
-    if (ret & PYEXEC_FORCED_EXIT) {
-        goto soft_reset_exit;
-    }
-    ret = pyexec_file_if_exists("boot.py");
-    if (ret & PYEXEC_FORCED_EXIT) {
-        goto soft_reset_exit;
-    }
     debug_mode_reset_last_exception();
-
+    ret = pyexec_file_if_exists("boot.py");
     gc_collect();
+    _flush_ringbuffer();
+
     if (ret & PYEXEC_FORCED_EXIT) {
         goto soft_reset_exit;
     }
     const char* name = (const char*)thingz_get_python_file_to_exec(true, 1);
     if(fail){
-
         mp_printf(MP_PYTHON_PRINTER, "Log csv transfer fail\n");
         mp_obj_print_exception(&thgz_debug_exception_print, MP_OBJ_FROM_PTR(nlr.ret_val));
         mp_obj_print_exception(MP_PYTHON_PRINTER, MP_OBJ_FROM_PTR(nlr.ret_val));
@@ -257,6 +260,7 @@ soft_reset:
         thingz_screen_print_header("REPL");
     }
     gc_collect();
+    _flush_ringbuffer();
 
     for (;;) {
         if (pyexec_mode_kind == PYEXEC_MODE_RAW_REPL) {
@@ -273,7 +277,13 @@ soft_reset:
     }
 
 soft_reset_exit:
-
+    _flush_ringbuffer();
+    ret = pyexec_frozen_module("_unmount.py", false);
+    //If reload happen when unmouting FAT, restart
+    if (ret & PYEXEC_FORCED_EXIT) {
+        goto soft_reset_exit;
+    }
+    gc_collect();
     #if MICROPY_BLUETOOTH_NIMBLE
     mp_bluetooth_deinit();
     #endif

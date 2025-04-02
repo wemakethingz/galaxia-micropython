@@ -160,6 +160,7 @@ static void _config_handle_event(uint8_t event)
                 if(!pyexec_repl_active)
                     mp_sched_reload_interrupt();
                 else{
+                    ringbuf_put(&stdin_ringbuf, 3);
                     ringbuf_put(&stdin_ringbuf, 4);
                 }
             }

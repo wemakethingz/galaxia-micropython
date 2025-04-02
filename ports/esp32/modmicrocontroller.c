@@ -61,6 +61,7 @@ static mp_obj_t set_file_to_execute(mp_obj_t filename) {
     if(!pyexec_repl_active)
         mp_sched_reload_interrupt();
     else{
+        ringbuf_put(&stdin_ringbuf, 3);
         ringbuf_put(&stdin_ringbuf, 4);
     }
     return mp_const_none;

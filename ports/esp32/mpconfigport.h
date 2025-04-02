@@ -394,3 +394,5 @@ void boardctrl_startup(void);
 #endif
 
 #define MICROPY_RELOAD_EXCEPTION            (1)
+#define MICROPY_REPL_INFO                   (1)
+
