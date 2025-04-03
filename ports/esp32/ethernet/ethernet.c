@@ -49,18 +49,6 @@ typedef struct _lan_if_obj_t {
     esp_eth_netif_glue_handle_t glue_handle;
 } ethernet_obj_t;
 
-typedef struct {
-    esp_eth_mac_t parent;
-    esp_eth_mediator_t *eth;
-    spi_device_handle_t spi_hdl;
-    SemaphoreHandle_t spi_lock;
-    TaskHandle_t rx_task_hdl;
-    uint32_t sw_reset_timeout_ms;
-    int int_gpio_num;
-    uint8_t addr[6];
-    bool packets_remain;
-} emac_w5500_t;
-
 const mp_obj_type_t ethernet_type;
 static ethernet_obj_t ethernet_obj = {{&ethernet_type}};
 static uint8_t eth_status = 0;
@@ -77,7 +65,7 @@ static void eth_event_handler(void *arg, esp_event_base_t event_base,
                               int32_t event_id, void *event_data);
 
 void ethernet_deinit(void){
-     ethernet_obj_t *self = &ethernet_obj;
+    ethernet_obj_t *self = &ethernet_obj;
     
     esp_event_handler_unregister(ETH_EVENT, ESP_EVENT_ANY_ID, &eth_event_handler);
     esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP, &got_ip_event_handler);
@@ -109,6 +97,11 @@ void ethernet_deinit(void){
     self->glue_handle = NULL;
     self->mac = NULL;
     self->phy = NULL;
+    glue_handle = NULL;
+    netif = NULL;
+    eth_handle = NULL;
+    w5500_mac = NULL;
+    w5500_phy = NULL;
 }
 
 static inline uint8_t enc28j60_cal_spi_cs_hold_time(int clock_speed_mhz)
@@ -180,6 +173,9 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
 
 static mp_obj_t ethernet___init__(void) {
     ethernet_obj_t *self = &ethernet_obj;
+    if(self->initialized){
+        return mp_const_none;
+    }
     gpio_install_isr_service(0);
 
     spi_host_id = SPI3_HOST;
@@ -214,7 +210,7 @@ static mp_obj_t ethernet___init__(void) {
         .queue_size = 20
     };
         
-   
+    
     esp_netif_init();
     esp_event_loop_create_default();
     
@@ -244,11 +240,11 @@ static mp_obj_t ethernet___init__(void) {
         return mp_const_none;
     }
     glue_handle = esp_eth_new_netif_glue(eth_handle);
-
+    
     unsigned char mac_base[6] = {0};
     esp_read_mac(mac_base, ESP_MAC_ETH);
     w5500_mac->set_addr(w5500_mac, mac_base);
-
+    printf("NETIF %p GLUE_HANDLE %p\n", glue_handle, netif);
     esp_netif_attach(netif, glue_handle);
     
     esp_netif_set_hostname(netif, "GALAXIA");
@@ -263,6 +259,7 @@ static mp_obj_t ethernet___init__(void) {
     esp_eth_start(self->eth_handle);
     
     self->active = true;
+    self->initialized = true;
 
     return mp_const_none;
 }

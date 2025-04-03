@@ -256,7 +256,7 @@ static void _getaddrinfo_inner(const mp_obj_t host, const mp_obj_t portx,
     }
     // Somehow LwIP returns a resolution of 0.0.0.0 for failed lookups, traced it as far back
     // as netconn_gethostbyname_addrtype returning OK instead of error.
-    printf("ADDDDDDDDD %p %p\n", res[0], res[0]->ai_canonname);
+    // printf("ADDDDDDDDD %p %p\n", res[0], res[0]->ai_canonname);
     if (*res == NULL || 
         (res[0]->ai_canonname && strcmp(res[0]->ai_canonname, "0.0.0.0") == 0 && strcmp(host_str, "0.0.0.0") != 0)) {
         lwip_freeaddrinfo(*res);

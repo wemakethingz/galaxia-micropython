@@ -872,6 +872,7 @@ void thingz_deinit(void){
     // mp_printf(MP_PYTHON_PRINTER, "thingz deinit end default %d\n", heap_caps_get_free_size(MALLOC_CAP_DEFAULT));
     temperature_sensor_disable(temperature_handle);
     temperature_sensor_uninstall(temperature_handle);
+
 }
 
 void thingz_stop_radio(void){

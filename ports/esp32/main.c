@@ -74,6 +74,8 @@
 #if MICROPY_THINGZ
 #include "common-thingz/thingz/thingz.h"
 #include "debug_mode/debug_mode.h"
+#include "ethernet/ethernet.h"
+
 #endif
 
 #if MICROPY_THINGZ_SCREEN
@@ -313,6 +315,7 @@ soft_reset_exit:
     #if MICROPY_THINGZ
     thingz_deinit();
     debug_mode_stop();
+    // ethernet_deinit();
     #endif
 
     // deinitialise peripherals
