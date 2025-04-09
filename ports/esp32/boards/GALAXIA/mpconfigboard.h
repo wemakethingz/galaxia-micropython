@@ -63,3 +63,7 @@
 #define MICROPY_THINGZ_RADIO 1
 
 #define MICROPY_THINGZ_LOG 1
+
+#define MICROPY_HW_SPI2_MOSI                (36)
+#define MICROPY_HW_SPI2_MISO                (35)
+#define MICROPY_HW_SPI2_SCK                 (34)

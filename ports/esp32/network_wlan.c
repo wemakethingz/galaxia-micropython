@@ -63,7 +63,7 @@ static wlan_if_obj_t wlan_sta_obj;
 static wlan_if_obj_t wlan_ap_obj;
 
 // Set to "true" if esp_wifi_start() was called
-static bool wifi_started = false;
+bool wifi_started = false;
 
 // Set to "true" if the STA interface is requested to be connected by the
 // user, used for automatic reassociation.
@@ -208,11 +208,9 @@ static void require_if(mp_obj_t wlan_if, int if_no) {
     }
 }
 
-int wifi_initialized = 0;
+static int wifi_initialized = 0;
 void esp_initialise_wifi(void) {
-    #if MICROPY_THINGZ
-    thingz_stop_radio();
-    #endif
+    
     if (!wifi_initialized) {
         esp_exceptions(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, network_wlan_wifi_event_handler, NULL, NULL));
         esp_exceptions(esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID, network_wlan_ip_event_handler, NULL, NULL));

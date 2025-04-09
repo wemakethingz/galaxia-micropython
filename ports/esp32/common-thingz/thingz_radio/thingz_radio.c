@@ -16,6 +16,8 @@
 
 #include <string.h>
 
+#include "modnetwork.h"
+
 typedef struct{
     esp_now_send_status_t status;
     uint8_t mac_addr[6];
@@ -122,18 +124,12 @@ static void esp_now_send_cb(const uint8_t *mac_addr, esp_now_send_status_t statu
     xQueueSend(send_queue, &send, 0);
 }
 
-// extern bool wifi_ever_inited, wifi_inited;
-extern int wifi_initialized;
+extern bool wifi_started;//defined in network_wlan
 void thingz_radio_init(thingz_radio_obj_t* radio){
     int i;
     uint8_t current_channel;
     wifi_second_chan_t second_channel;
     radio->base.type = &thingz_radio_type;
-
-    if(wifi_initialized)
-        return;
-
-    radio->enabled = true;
 
     receive_queue_data = malloc(sizeof(THGZRadioReceiveEvent_t)*20);
     send_queue_data = malloc(sizeof(THGZRadioSendEvent_t)*5);
@@ -156,11 +152,10 @@ void thingz_radio_init(thingz_radio_obj_t* radio){
 
     // netif_interface = esp_netif_create_default_wifi_sta();
     
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    esp_wifi_init(&cfg);
-    esp_wifi_set_storage(WIFI_STORAGE_RAM);
-    esp_wifi_set_mode(WIFI_MODE_STA);
+    esp_initialise_wifi();
     esp_wifi_start();
+    esp_wifi_set_mode(WIFI_MODE_STA);
+    wifi_started = true;
     
     esp_wifi_set_max_tx_power(78);
     esp_wifi_get_channel(&current_channel, &second_channel);
@@ -178,7 +173,9 @@ void thingz_radio_init(thingz_radio_obj_t* radio){
     }
     ESP_LOGE(TAG, "add %d", esp_now_add_peer(&broadcast));
     esp_now_register_recv_cb(esp_now_recv_cb);
-    esp_now_register_send_cb(esp_now_send_cb);    
+    esp_now_register_send_cb(esp_now_send_cb); 
+
+    radio->enabled = true;   
 
 }
 
@@ -198,13 +195,13 @@ void thingz_radio_deinit(thingz_radio_obj_t* radio){
 
     esp_now_deinit();
 
-    esp_wifi_stop();
-    esp_wifi_deinit();
+    // esp_wifi_stop();
+    // esp_wifi_deinit();
 
     // esp_netif_destroy(netif_interface);
 
     radio->enabled = false;
-    wifi_initialized = 0;
+    // wifi_initialized = 0;
 
 }
 
