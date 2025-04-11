@@ -1,11 +1,6 @@
-"""Ethernet module
-
-Add ethernet connectivity using Thingz ethernet extension board
-
-
-"""
-
 from __future__ import annotations
+
+import network
 
 def active(self, state: bool) -> True:
     """If called with no args, return the current state of the ethernet driver.
@@ -42,5 +37,10 @@ def ifconfig(self, ip_config: list / tuple / str) -> int:
     * gateway: str
     * DNS: str
     """
+
+    ...
+
+def get_lan(self) -> network.LAN:
+    """Return the intern LAN object"""
 
     ...
