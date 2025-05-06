@@ -9,7 +9,10 @@
 
 #define MICROPY_FATFS_USE_LABEL             (1)
 
+#define MICROPY_THINGZ_DEBUG_MODE           (1)
+
 #define MICROPY_THINGZ                      (1)
+
 
 #define MICROPY_THINGZ_BUTTONS_NB           (2)
 #define MICROPY_THINGZ_BUTTONS() { MP_ROM_QSTR(MP_QSTR_button_a),MP_ROM_PTR(&thingz_buttons[0])},{ MP_ROM_QSTR(MP_QSTR_button_b),MP_ROM_PTR(&thingz_buttons[1])}

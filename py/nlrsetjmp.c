@@ -26,9 +26,30 @@
 
 #include "py/mpstate.h"
 
+#ifdef MICROPY_THINGZ_DEBUG_MODE
+#include "debug_mode/debug_mode.h"
+#include "obj.h"
+#endif
+
 #if MICROPY_NLR_SETJMP
 
 void nlr_jump(void *val) {
+    #ifdef MICROPY_THINGZ_DEBUG_MODE
+
+    void *_val = MP_OBJ_TO_PTR(val);
+    if(_val != NULL){
+        if(mp_obj_is_exception_instance(val)){
+            const mp_obj_type_t *type = mp_obj_get_type(val);
+            debug_mode_reset_last_exception();
+            if(type != &mp_type_ReloadInterrupt){
+                if(type != &mp_type_KeyboardInterrupt)
+                    mp_obj_print_exception(&thgz_debug_exception_print, val);
+            }else{
+                debug_mode_stop();
+            }
+        }
+    }
+    #endif
     MP_NLR_JUMP_HEAD(val, top);
     longjmp(top->jmpbuf, 1);
 }

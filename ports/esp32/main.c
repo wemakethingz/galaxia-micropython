@@ -73,9 +73,12 @@
 
 #if MICROPY_THINGZ
 #include "common-thingz/thingz/thingz.h"
-#include "debug_mode/debug_mode.h"
 #include "ethernet/ethernet.h"
 
+#endif
+
+#if MICROPY_THINGZ_DEBUG_MODE
+#include "debug_mode/debug_mode.h"
 #endif
 
 #if MICROPY_THINGZ_SCREEN
@@ -186,8 +189,11 @@ soft_reset:
     #if MICROPY_THINGZ
 
     thingz_init();
-    debug_mode_start();
 
+    #endif
+
+    #if MICROPY_THINGZ_DEBUG_MODE
+    debug_mode_start();
     #endif
     
     // run boot-up scripts
@@ -232,7 +238,9 @@ soft_reset:
         fail = 1;
     }
 
+    #if MICROPY_THINGZ_DEBUG_MODE
     debug_mode_reset_last_exception();
+    #endif
     ret = pyexec_file_if_exists("boot.py");
     gc_collect();
     _flush_ringbuffer();
@@ -243,7 +251,9 @@ soft_reset:
     const char* name = (const char*)thingz_get_python_file_to_exec(true, 1);
     if(fail){
         mp_printf(MP_PYTHON_PRINTER, "Log csv transfer fail\n");
+        #if MICROPY_THINGZ_DEBUG_MODE
         mp_obj_print_exception(&thgz_debug_exception_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+        #endif
         mp_obj_print_exception(MP_PYTHON_PRINTER, MP_OBJ_FROM_PTR(nlr.ret_val));
     }
     if (pyexec_mode_kind == PYEXEC_MODE_FRIENDLY_REPL && ret != 0) {
@@ -254,8 +264,12 @@ soft_reset:
             goto soft_reset_exit;
         }
     }
-
+    
+    #if MICROPY_THINGZ_DEBUG_MODE
     char* exception = debug_mode_get_last_exception();
+    #else
+    char* exception = "";
+    #endif
     if(strlen(exception) > 0){
         thingz_screen_print_header("Erreur");
     }else{
@@ -314,8 +328,11 @@ soft_reset_exit:
 
     #if MICROPY_THINGZ
     thingz_deinit();
-    debug_mode_stop();
     // ethernet_deinit();
+    #endif
+
+    #if MICROPY_THINGZ_DEBUG_MODE
+    debug_mode_stop();
     #endif
 
     // deinitialise peripherals
