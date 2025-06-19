@@ -173,6 +173,12 @@ list(APPEND MICROPY_SOURCE_PORT
     debug_mode/debug_mode.c
     modmicrocontroller.c
     ethernet/ethernet.c
+    tensorflow/main_functions.cc
+    tensorflow/constants.cc 
+    tensorflow/output_handler.cc
+    tensorflow/model.cc
+    tensorflow/tensorflow.c
+    tensorflow/tensorflow_interface.cc
 )
 list(TRANSFORM MICROPY_SOURCE_PORT PREPEND ${MICROPY_PORT_DIR}/)
 list(APPEND MICROPY_SOURCE_PORT ${CMAKE_BINARY_DIR}/pins.c)

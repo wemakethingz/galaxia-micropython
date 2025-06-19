@@ -25,7 +25,9 @@
  */
 #ifndef MICROPY_INCLUDED_PY_MPPRINT_H
 #define MICROPY_INCLUDED_PY_MPPRINT_H
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include "py/mpconfig.h"
 
 #define PF_FLAG_LEFT_ADJUST       (0x001)
@@ -77,6 +79,10 @@ int mp_print_float(const mp_print_t *print, mp_float_t f, char fmt, int flags, c
 int mp_printf(const mp_print_t *print, const char *fmt, ...);
 #ifdef va_start
 int mp_vprintf(const mp_print_t *print, const char *fmt, va_list args);
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif // MICROPY_INCLUDED_PY_MPPRINT_H
