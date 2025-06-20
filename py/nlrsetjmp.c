@@ -34,6 +34,7 @@
 #if MICROPY_NLR_SETJMP
 
 void nlr_jump(void *val) {
+    MP_NLR_JUMP_HEAD(val, top);
     #ifdef MICROPY_THINGZ_DEBUG_MODE
 
     void *_val = MP_OBJ_TO_PTR(val);
@@ -50,7 +51,6 @@ void nlr_jump(void *val) {
         }
     }
     #endif
-    MP_NLR_JUMP_HEAD(val, top);
     longjmp(top->jmpbuf, 1);
 }
 

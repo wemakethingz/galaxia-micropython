@@ -265,6 +265,7 @@ soft_reset:
         }
     }
     
+    debug_mode_expose_last_exception();
     #if MICROPY_THINGZ_DEBUG_MODE
     char* exception = debug_mode_get_last_exception();
     #else

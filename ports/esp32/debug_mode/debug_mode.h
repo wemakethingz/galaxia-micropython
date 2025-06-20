@@ -27,6 +27,7 @@ size_t debug_mode_utf8_strlen(const byte *b);
 
 void debug_mode_print_header(void);
 
+void debug_mode_expose_last_exception(void);
 char* debug_mode_get_last_exception(void);
 void debug_mode_reset_last_exception(void);
 void debug_mode_start(void);

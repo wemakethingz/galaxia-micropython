@@ -20,7 +20,11 @@ void debug_mode_show_last_error_screen(void){
 
 void debug_mode_last_error_enter(void){
     debug_mode_set_header_text(last_error_page_title);
-    debug_mode_ui_text_scroll_init(&text_scroll, 0, 1, 8*26, debug_mode_get_last_exception(), 0, 200000);
+    char* title = debug_mode_get_last_exception();
+    if(!title)
+        title = "";
+
+    debug_mode_ui_text_scroll_init(&text_scroll, 0, 1, 8*26, title, 0, 200000);
 }
 
 void debug_mode_last_error_exit(void){

@@ -18,7 +18,7 @@ INC += -I$(TOP)
 
 # compiler settings
 CWARN = -Wall -Werror
-CWARN += -Wextra -Wno-unused-parameter -Wpointer-arith
+CWARN += -Wextra -Wno-unused-parameter -Wpointer-arith -Wno-error=unterminated-string-initialization
 CFLAGS += $(INC) $(CWARN) -std=gnu99 $(COPT) $(CFLAGS_EXTRA)
 CFLAGS += -fdata-sections -ffunction-sections -fno-asynchronous-unwind-tables
 

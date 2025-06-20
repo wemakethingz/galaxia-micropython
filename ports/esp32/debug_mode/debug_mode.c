@@ -138,7 +138,7 @@ static TaskHandle_t debugTaskHandle;
 // };
 
 static char debug_last_exception[512] = {0};
-
+static uint8_t debug_expose_exception = 0;
 static char *header_text;
 static debug_mode_ui_text_scroll_t header_scroll;
 
@@ -478,14 +478,21 @@ void debug_mode_stop(void){
     }
 }
 
+void debug_mode_expose_last_exception(void){
+    debug_expose_exception = 1;
+}
+
 char* debug_mode_get_last_exception(void){
-    return debug_last_exception;
+    if(debug_expose_exception)
+        return debug_last_exception;
+    return NULL;
 }
 
 void debug_mode_reset_last_exception(void){
     int i;
     for(i = 0; i < 256; i++)
         debug_last_exception[i] = 0;
+    debug_expose_exception = 0;
 }
 
 size_t debug_mode_utf8_strlen(const byte *b){

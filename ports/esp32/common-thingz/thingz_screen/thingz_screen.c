@@ -1624,7 +1624,7 @@ void thingz_screen_print_header(const char* filename){
     lcdDrawFillRect(&thingz_screen.dev, MICROPY_THINGZ_SCREEN_HEIGHT-15, 0, MICROPY_THINGZ_SCREEN_HEIGHT-1, MICROPY_THINGZ_SCREEN_WIDTH-1, 0);
     uint16_t color = 0x07e0;
     char* exception = debug_mode_get_last_exception();
-    if(strlen(exception) > 0){
+    if(exception && strlen(exception) > 0){
         color = 0xf800;
         thingz_screen_print_screen((uint8_t*)"Erreur", strlen("Erreur"), 0, MICROPY_THINGZ_SCREEN_HEIGHT-14, 0xFFFF, 1);
     }else{
