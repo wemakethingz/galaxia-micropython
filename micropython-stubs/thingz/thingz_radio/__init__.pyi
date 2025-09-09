@@ -38,3 +38,12 @@ class Radio:
         :rtype: int
         """
         ...
+
+    def get_mac(self) -> bytes:
+        """
+        Get the mac address used by the radio module
+
+        :return: The mac address used by the radio module
+        :rtype: bytes
+        """
+        ...
