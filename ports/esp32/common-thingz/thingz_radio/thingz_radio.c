@@ -13,6 +13,7 @@
 #include "esp_wifi.h"
 #include "esp_now.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 
 #include <string.h>
 
@@ -427,12 +428,34 @@ static mp_obj_t mp_thingz_radio_get_channel(mp_obj_t self_in) {
 
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_radio_get_channel_obj, mp_thingz_radio_get_channel);
 
+//GET MAC
+//|    def get_mac(self) -> bytes:
+//|        """
+//|        Get the mac address used by the radio module
+//|
+//|        :return: The mac address used by the radio module
+//|        :rtype: bytes
+//|        """
+//|        ...
+//|
+//':'.join('%02x' % b for b in mac_string)
+static mp_obj_t mp_thingz_radio_get_mac(mp_obj_t self_in) {
+	thingz_radio_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    
+	return mp_obj_new_bytes(mac, sizeof(mac));
+}
+
+MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_radio_get_mac_obj, mp_thingz_radio_get_mac);
+
 static const mp_map_elem_t thingz_radio_local_dict_table[] = {
 	{ MP_OBJ_NEW_QSTR(MP_QSTR___del__),     (mp_obj_t)&mp_thingz_radio_del_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_send),     (mp_obj_t)&mp_thingz_radio_send_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_receive),     (mp_obj_t)&mp_thingz_radio_receive_obj },   
     { MP_OBJ_NEW_QSTR(MP_QSTR_set_channel),     (mp_obj_t)&mp_thingz_radio_set_channel_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_get_channel),     (mp_obj_t)&mp_thingz_radio_get_channel_obj },
+    { MP_OBJ_NEW_QSTR(MP_QSTR_get_mac),     (mp_obj_t)&mp_thingz_radio_get_mac_obj },
 };
 
 static MP_DEFINE_CONST_DICT (
