@@ -102,12 +102,12 @@ const mp_print_t thgz_radio_print = {
     thgz_radio_printer
 };
 
-static void esp_now_recv_cb(const uint8_t *mac_addr, const uint8_t *data, int data_len){
+static void esp_now_recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int data_len){
     ESP_LOGE(TAG, "receive: len %d data %s", data_len, data);
     THGZRadioReceiveEvent_t receive;
     int i;
     for(i = 0; i < 6; i++){
-        receive.mac_addr[i] = mac_addr[i];
+        receive.mac_addr[i] = info->src_addr[i];
     }
     for(i = 0; i < data_len; i++){
         receive.payload[i] = data[i];
@@ -369,10 +369,15 @@ static mp_obj_t mp_thingz_radio_receive(mp_obj_t self_in) {
         vstr_t vstr;
         if(arg.size == 0)
             return mp_const_none;
-
+    
+        mp_obj_t receive = mp_obj_new_list(0, 0);
+        mp_obj_list_append(receive, mp_obj_new_bytes(arg.mac_addr, sizeof(arg.mac_addr)));
+        
         vstr_init(&vstr, arg.size);
         vstr_add_strn(&vstr, (char*)(arg.payload), arg.size);
-        return mp_obj_new_str_from_vstr(&vstr);
+        mp_obj_list_append(receive, mp_obj_new_str_from_vstr(&vstr));
+
+        return receive;
     }
     return mp_const_none;
 }
@@ -441,7 +446,7 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_radio_get_channel_obj, mp_thingz_radio_get_c
 //':'.join('%02x' % b for b in mac_string)
 static mp_obj_t mp_thingz_radio_get_mac(mp_obj_t self_in) {
 	thingz_radio_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    uint8_t mac[6];
+    uint8_t mac[6] = {0};
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
     
 	return mp_obj_new_bytes(mac, sizeof(mac));
