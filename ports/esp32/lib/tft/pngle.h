@@ -27,7 +27,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "esp32/rom/miniz.h"
+#include "esp32/miniz.h"
 
 #ifdef __cplusplus
 extern "C" {

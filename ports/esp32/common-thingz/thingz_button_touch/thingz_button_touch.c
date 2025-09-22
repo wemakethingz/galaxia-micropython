@@ -6,6 +6,7 @@
 #include "py/bc.h"
 
 #include "driver/touch_pad.h"
+#include "soc/soc_caps.h"
 
 #include "esp_timer.h"
 #include "esp_log.h"
@@ -222,7 +223,7 @@ void thingz_button_touch_common_init(void){
         init = false;
     }
 
-    if(touch_pad_timeout_set(true, SOC_TOUCH_PAD_THRESHOLD_MAX) != ESP_OK){
+    if(touch_pad_timeout_set(true, TOUCH_PAD_THRESHOLD_MAX) != ESP_OK){
         init = false;
     }
     

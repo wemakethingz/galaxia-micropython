@@ -19,7 +19,7 @@
 
 #include "driver/dac_continuous.h"
 
-#include "esp32/rom/lldesc.h"
+#include "soc/lldesc.h" 
 
 
 #include "freertos/FreeRTOS.h"

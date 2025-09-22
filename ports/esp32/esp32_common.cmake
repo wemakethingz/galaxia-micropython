@@ -146,11 +146,11 @@ list(APPEND MICROPY_SOURCE_PORT
     common-thingz/thingz_radio/thingz_radio.c
     common-thingz/thingz_log/thingz_log.c
     lib/tft/font.c
-    lib/tft/decode_jpeg.c
-    lib/tft/decode_png.c
+    # lib/tft/decode_jpeg.c
+    #lib/tft/decode_png.c
     lib/tft/fontx.c
     lib/tft/ili9340.c
-    lib/tft/pngle.c
+    # lib/tft/pngle.c
     lib/jpeg/jpeg.c
     lib/jpeg/tjpgd.c
     lib/lis2dh12/lis2dh12.c
@@ -262,7 +262,6 @@ target_compile_definitions(${MICROPY_TARGET} PUBLIC
     ${MICROPY_DEF_CORE}
     ${MICROPY_DEF_BOARD}
     ${MICROPY_DEF_TINYUSB}
-    MICROPY_ESP_IDF_4=1
     MICROPY_VFS_FAT=1
     MICROPY_VFS_LFS2=1
     FFCONF_H=\"${MICROPY_OOFATFS_DIR}/ffconf.h\"

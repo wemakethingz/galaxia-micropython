@@ -109,7 +109,7 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_log_del_obj, mp_thingz_log_del);
 //|        :param list data: The data to add""" 
 //|        ...
 //|
-static mp_obj_t mp_thingz_log_add(mp_obj_t self_in, mp_obj_list_t* list) {
+static mp_obj_t mp_thingz_log_add(mp_obj_t self_in, mp_obj_t list) {
 	thingz_log_obj_t *self = MP_OBJ_TO_PTR(self_in);
 
     uint8_t found = 0;
@@ -126,7 +126,7 @@ static mp_obj_t mp_thingz_log_add(mp_obj_t self_in, mp_obj_list_t* list) {
             // mp_printf(MP_PYTHON_PRINTER, "search\n");
             // mp_printf(MP_PYTHON_PRINTER, "items %p %d\n", self->columns, self->columns_len);
             for(int i = 0; i < self->columns_len; i++){
-                const char* c = _search_columns(list, self->columns[i]);
+                const char* c = _search_columns((mp_obj_list_t*)list, self->columns[i]);
                 // mp_printf(MP_PYTHON_PRINTER, "search end\n");
                 if(i > 0)
                     fprintf(f, ";");
@@ -191,7 +191,7 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_log_delete_obj, mp_thingz_log_delete);
 //|        :param list data: The columns to create""" 
 //|        ...
 //|
-static mp_obj_t mp_thingz_log_set_columns(mp_obj_t self_in, mp_obj_list_t* list) {
+static mp_obj_t mp_thingz_log_set_columns(mp_obj_t self_in, mp_obj_t list) {
 	thingz_log_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if(!mp_obj_is_type(list, &mp_type_list)){
         mp_raise_TypeError(MP_ERROR_TEXT("arg1: list expected"));
@@ -203,11 +203,11 @@ static mp_obj_t mp_thingz_log_set_columns(mp_obj_t self_in, mp_obj_list_t* list)
         free(self->columns);
         self->columns_len = 0;
     }
-    self->columns_len = list->len;
+    self->columns_len = ((mp_obj_list_t*)list)->len;
     self->columns = malloc(sizeof(char*)*self->columns_len);
     for(int i = 0; i < self->columns_len; i++){
-        self->columns[i] = malloc(strlen(mp_obj_str_get_str(list->items[i]))+1);
-        strcpy(self->columns[i], mp_obj_str_get_str(list->items[i]));
+        self->columns[i] = malloc(strlen(mp_obj_str_get_str(((mp_obj_list_t*)list)->items[i]))+1);
+        strcpy(self->columns[i], mp_obj_str_get_str(((mp_obj_list_t*)list)->items[i]));
     }
     // return mp_const_none;
     return mp_thingz_log_delete(self);

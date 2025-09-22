@@ -236,7 +236,7 @@ static mp_obj_t load_obj(mp_reader_t *reader) {
 }
 
 static mp_raw_code_t *load_raw_code(mp_reader_t *reader, mp_module_context_t *context) {
-    // Load function kind and data length
+   // Load function kind and data length
     size_t kind_len = read_uint(reader);
     int kind = (kind_len & 3) + MP_CODE_BYTECODE;
     bool has_children = !!(kind_len & 4);
@@ -257,10 +257,17 @@ static mp_raw_code_t *load_raw_code(mp_reader_t *reader, mp_module_context_t *co
     #endif
 
     if (kind == MP_CODE_BYTECODE) {
-        // Allocate memory for the bytecode
-        fun_data = m_new(uint8_t, fun_data_len);
-        // Load bytecode
-        read_bytes(reader, fun_data, fun_data_len);
+        #if MICROPY_VFS_ROM
+        // Try to reference memory-mapped data for the bytecode.
+        fun_data = (uint8_t *)mp_reader_try_read_rom(reader, fun_data_len);
+        #endif
+
+        if (fun_data == NULL) {
+            // Allocate memory for the bytecode.
+            fun_data = m_new(uint8_t, fun_data_len);
+            // Load bytecode.
+            read_bytes(reader, fun_data, fun_data_len);
+        }
 
     #if MICROPY_EMIT_MACHINE_CODE
     } else {
@@ -346,7 +353,7 @@ static mp_raw_code_t *load_raw_code(mp_reader_t *reader, mp_module_context_t *co
 
     #if MICROPY_EMIT_MACHINE_CODE
     } else {
-        const uint8_t *prelude_ptr;
+        const uint8_t *prelude_ptr = NULL;
         #if MICROPY_EMIT_NATIVE_PRELUDE_SEPARATE_FROM_MACHINE_CODE
         if (kind == MP_CODE_NATIVE_PY) {
             // Executable code cannot be accessed byte-wise on this architecture, so copy
@@ -359,15 +366,17 @@ static mp_raw_code_t *load_raw_code(mp_reader_t *reader, mp_module_context_t *co
 
         // Relocate and commit code to executable address space
         reloc_info_t ri = {reader, context, rodata, bss};
+        #if MICROPY_PERSISTENT_CODE_TRACK_FUN_DATA
+        if (native_scope_flags & MP_SCOPE_FLAG_VIPERRELOC) {
+            // Track the function data memory so it's not reclaimed by the GC.
+            track_root_pointer(fun_data);
+        }
+        #endif
         #if defined(MP_PLAT_COMMIT_EXEC)
         void *opt_ri = (native_scope_flags & MP_SCOPE_FLAG_VIPERRELOC) ? &ri : NULL;
         fun_data = MP_PLAT_COMMIT_EXEC(fun_data, fun_data_len, opt_ri);
         #else
         if (native_scope_flags & MP_SCOPE_FLAG_VIPERRELOC) {
-            #if MICROPY_PERSISTENT_CODE_TRACK_FUN_DATA
-            // Track the function data memory so it's not reclaimed by the GC.
-            track_root_pointer(fun_data);
-            #endif
             // Do the relocations.
             mp_native_relocate(&ri, fun_data, (uintptr_t)fun_data);
         }

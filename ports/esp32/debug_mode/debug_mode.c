@@ -254,7 +254,8 @@ static void _enter_screen(uint8_t current){
 }
 
 static void _exit_debug(void);
-static mp_obj_t mp_debug_handle_screen(uint8_t* current){
+static mp_obj_t mp_debug_handle_screen(mp_obj_t cur){
+    uint8_t* current = (uint8_t*)cur;
     //When clean_vm is called we can no longer call m_malloc
     //Some debug interface may not work properly (ie accelormeter.get need to allocate a list)
     //So we exit
@@ -529,7 +530,7 @@ void debug_mode_print_str(uint8_t x, uint8_t y, const char* str, uint32_t backgr
             if (c >= 0x20 && c <= 0x7e) {
                 // uint8_t index = fontio_builtinfont_get_glyph_index(MP_OBJ_FROM_PTR(&supervisor_terminal_font), c);
                 // common_hal_displayio_tilegrid_set_tile(&debug_grid, x, y, index);
-                thingz_screen_debug_set_str(&thingz_screen.debug, &c, x, y);
+                thingz_screen_debug_set_str(&thingz_screen.debug, (uint8_t*)&c, x, y);
             }else if(c == '\n'){
                 y++;
             }else if(c == '\r'){
@@ -541,7 +542,7 @@ void debug_mode_print_str(uint8_t x, uint8_t y, const char* str, uint32_t backgr
                 thingz_screen_debug_set_str(&thingz_screen.debug, (uint8_t*)" ", x, y);
             }
         }else{
-            thingz_screen_debug_set_str(&thingz_screen.debug, &c, x, y);
+            thingz_screen_debug_set_str(&thingz_screen.debug, (uint8_t*)&c, x, y);
             // uint8_t index = fontio_builtinfont_get_glyph_index(MP_OBJ_FROM_PTR(&supervisor_terminal_font), c);
             // if(index != 0xff && index < debug_grid.tiles_in_bitmap)
             //     // common_hal_displayio_tilegrid_set_tile(&debug_grid, x, y, index);
