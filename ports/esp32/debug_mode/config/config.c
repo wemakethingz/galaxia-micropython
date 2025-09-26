@@ -1089,51 +1089,59 @@ static void convert_to_utf8(char *file, char *destination, size_t dest_len)
 
 static int32_t _list_files(char *path, int32_t index, int32_t max, int32_t counter, uint8_t y)
 {
-    // mp_printf(MP_PYTHON_PRINTER, "%s\n", path);
+    // mp_printf(MP_PYTHON_PRINTER, "CALLING %s\n", path);
     mp_obj_t args = {mp_obj_new_str(path, strlen(path))};
-    mp_obj_list_t* list = mp_vfs_listdir(1, &args);
-    // mp_printf(MP_PYTHON_PRINTER, "%d\n", list->len);
-    size_t i;
-    int len = strlen(path);
-    for(i = 0; i < list->len; i++){
-        
-        GET_STR_DATA_LEN(list->items[i], s, l);
-        char p[128];
-        snprintf(p, 50, "%s/%s", path, s);
-        
-        if(strcmp((char*)s, "lib") == 0 || s[0] == '.')
-            continue;
-        // mp_printf(MP_PYTHON_PRINTER, "%s\n", path);
-        mp_obj_tuple_t* stat = mp_vfs_stat(mp_obj_new_str(p, strlen(p)));
-        if(mp_obj_get_int(stat->items[0]) & 0x4000){
-            //Directory
-            char utf8[50];
-            convert_to_utf8(s, utf8, 50);
-            snprintf(&path[len], 128, "/%s", utf8);
-            // mp_printf(MP_PYTHON_PRINTER, "%s\n", path);
-            counter = _list_files(path, index, max, counter, y);
-        }else{
-            if (strcmp((char*)s, "boot.py") == 0 || strncmp((char*)(s + strlen((char*)s) - 3), ".py", 3) != 0)
+    nlr_buf_t nlr;
+    
+        mp_obj_list_t* list = mp_vfs_listdir(1, &args);
+        // mp_printf(MP_PYTHON_PRINTER, "list len %d\n", list->len);
+        size_t i;
+        int len = strlen(path);
+        for(i = 0; i < list->len; i++){
+            // mp_printf(MP_PYTHON_PRINTER, "i %d\n", i);
+            GET_STR_DATA_LEN(list->items[i], s, l);
+            char p[128];
+            snprintf(p, 50, "%s/%s", path, s);
+            
+            if(strcmp((char*)s, "lib") == 0)
                 continue;
-            if (counter - index >= max)
-                return 0xffff;
-            if (counter >= index)
-            {
-                if (path[0] == '.' && strlen(path) == 1)
+            // mp_printf(MP_PYTHON_PRINTER, "PATH %s\n", path);
+            mp_obj_tuple_t* stat = mp_vfs_stat(mp_obj_new_str(p, strlen(p)));
+            if(mp_obj_get_int(stat->items[0]) & 0x4000){
+                //Directory
+                char utf8[50];
+                convert_to_utf8(s, utf8, 50);
+                int oldLen = len;
+                snprintf(&path[len], 128, "/%s", utf8);
+                // mp_printf(MP_PYTHON_PRINTER, "DIR %s\n", path);
+                counter = _list_files(path, index, max, counter, y);
+                path[oldLen] = 0;
+                // mp_printf(MP_PYTHON_PRINTER, "ret %d i %d\n", counter, i);
+            }else{
+                // mp_printf(MP_PYTHON_PRINTER, "FILE %s\n", s);
+                if (strcmp((char*)s, "boot.py") == 0 || strncmp((char*)(s + strlen((char*)s) - 3), ".py", 3) != 0)
+                    continue;
+                if (counter - index >= max)
+                    return 0xffff;
+                if (counter >= index)
                 {
-                    convert_to_utf8(s, files_name + (counter - index) * 50, 49);
+                    if (path[0] == '.' && strlen(path) == 1)
+                    {
+                        convert_to_utf8(s, files_name + (counter - index) * 50, 49);
+                    }
+                    else
+                    {
+                        char *str = (char *)malloc(260 * sizeof(char));
+                        sprintf(str, "%s/%s", path[0] == '.' ? path + 2 : path, s);
+                        convert_to_utf8(str, files_name + (counter - index) * 50, 49);
+                        free(str);
+                    }
                 }
-                else
-                {
-                    char *str = (char *)malloc(260 * sizeof(char));
-                    sprintf(str, "%s/%s", path[0] == '.' ? path + 2 : path, s);
-                    convert_to_utf8(str, files_name + (counter - index) * 50, 49);
-                    free(str);
-                }
+                counter++;
             }
-            counter++;
+           
         }
-    }
+    
     return counter;
 }
 
