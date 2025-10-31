@@ -154,6 +154,7 @@ list(APPEND MICROPY_SOURCE_PORT
     lib/jpeg/jpeg.c
     lib/jpeg/tjpgd.c
     lib/lis2dh12/lis2dh12.c
+    lib/lis2mdl/lis2mdl_reg.c
     lib/qmc6310u/qmc6310u.c
     lib/qmc6309/qmc6309.c
     hal/accel_lis2dh12.c

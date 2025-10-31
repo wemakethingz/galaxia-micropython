@@ -15,12 +15,14 @@
 
 #include "lib/qmc6310u/qmc6310u.h"
 #include "lib/qmc6309/qmc6309.h"
+#include "lib/lis2mdl/lis2mdl_reg.h"
 
 #include "common-thingz/thingz_memory/thingz_memory.h"
 #include "common-thingz/thingz_i2c/thingz_i2c.h"
 
 #define QMC6310U_ADDR 0x1C << 1
 #define QMC6309_ADDR 0x7C << 1
+#define LIS2MDL_ADDR 0x1E << 1
 
 #define COMPASS_FREQ 10.0f
 #define COMPASS_TIME_BETWEEN_REQUEST 1.0f/COMPASS_FREQ
@@ -52,6 +54,7 @@ static thingz_compass_data_t last_values;
 static int64_t last_value_timestamp;
 static qmc630u_ctx_t ctx_compass_qmc630u;
 static QMC6309_ctx_t ctx_compass_qmc6309;
+static stmdev_ctx_t ctx_compass_lis2mdl;
 
 static uint32_t errors_count; 
 
@@ -88,6 +91,14 @@ static int32_t i2c_read(uint8_t reg, uint8_t *bufp, uint16_t len){
         errors_count++;
     }
     return error;
+}
+
+static int32_t lis2mdl_read(void* handle, uint8_t reg, uint8_t *bufp, uint16_t len){
+    return i2c_read(reg, bufp, len);
+}
+
+static int32_t lis2mdl_write(void* handle, uint8_t reg, const uint8_t *bufp, uint16_t len){
+    return i2c_write(reg, bufp, len);
 }
 
 static void matrix_cholesky(double m[3][3], double cholesky[3][3], uint8_t dimension){
@@ -320,7 +331,12 @@ void common_thingz_compass_init(thingz_compass_obj_t* compass, int8_t pinDRDY, u
 
     _load_calibration_data(version);
 
-    if(version == THINGZ_VERSION_1_0_7){
+    
+    if(version == THINGZ_VERSION_1_0_9){
+        compass_addr = LIS2MDL_ADDR;
+    }
+    //version 1.0.8 was never released
+    else if(version == THINGZ_VERSION_1_0_7){
         // pcb 1.0.7
         compass_addr = QMC6309_ADDR;
     }else{
@@ -341,12 +357,20 @@ void common_thingz_compass_init(thingz_compass_obj_t* compass, int8_t pinDRDY, u
     ctx_compass_qmc6309.read_reg = i2c_read;
     ctx_compass_qmc6309.write_reg = i2c_write;
 
+    ctx_compass_lis2mdl.read_reg = lis2mdl_read;
+    ctx_compass_lis2mdl.write_reg = lis2mdl_write;
 
     errors_count = 0;
 
     if(compass_addr == QMC6310U_ADDR){
         compass_range = QMC630U_RANGE_2;
         qmc630u_init(&ctx_compass_qmc630u, compass_range, COMPASS_FREQ);
+    }else if(compass_addr == LIS2MDL_ADDR){
+        lis2mdl_operating_mode_set(&ctx_compass_lis2mdl, LIS2MDL_CONTINUOUS_MODE);
+        lis2mdl_data_rate_set(&ctx_compass_lis2mdl, LIS2MDL_ODR_100Hz);
+        lis2mdl_power_mode_set(&ctx_compass_lis2mdl, LIS2MDL_HIGH_RESOLUTION);
+        lis2mdl_low_pass_bandwidth_set(&ctx_compass_lis2mdl, LIS2MDL_ODR_DIV_4);
+        lis2mdl_block_data_update_set(&ctx_compass_lis2mdl, 1);
     }else{
         compass_range = QMC6309_RANGE_8;
         QMC6309_init(&ctx_compass_qmc6309, compass_range, COMPASS_FREQ);
@@ -375,6 +399,13 @@ void common_thingz_compass_get_gauss(thingz_compass_obj_t* compass, uint8_t raw,
     float d[3];
     if(compass_addr == QMC6310U_ADDR){
         error = qmc630u_get_mgauss(&ctx_compass_qmc630u, d, compass_range);
+    }else if(compass_addr == LIS2MDL_ADDR){
+        int16_t raw_data[3];
+        error = lis2mdl_magnetic_raw_get(&ctx_compass_lis2mdl, raw_data);
+        d[0] = lis2mdl_from_lsb_to_mgauss(raw_data[0]);
+        d[1] = lis2mdl_from_lsb_to_mgauss(raw_data[1])*-1;
+        d[2] = lis2mdl_from_lsb_to_mgauss(raw_data[2])*-1;
+
     }else{
         error = QMC6309_get_mgauss(&ctx_compass_qmc6309, d, compass_range);
         //fix axis orientation

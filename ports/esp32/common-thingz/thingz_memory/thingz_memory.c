@@ -94,6 +94,10 @@ const char* thingz_memory_get_pcb_version_name(void){
             return "1.0.6";
         case 1:
             return "1.0.7";
+        case 2:
+            return "1.0.8";
+        case 3:
+            return "1.0.9";
         default:
             return "-";
     }
