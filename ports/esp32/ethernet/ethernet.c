@@ -7,6 +7,7 @@
 #include "py/obj.h"
 #include "py/runtime.h"
 #include "py/binary.h"
+#include "py/gc.h"
 
 #include "ethernet.h"
 
@@ -38,6 +39,12 @@ static mp_obj_t _get_lan(uint8_t print){
     // network.LAN(None, phy_addr=1, phy_type=network.PHY_W5500, cs=machine.Pin(15), int=machine.Pin(21), spi=machine.SPI(2, dma=2))
     nlr_buf_t nlr;
     mp_obj_t ret;
+
+    // Déclarer les objets avant nlr_push pour pouvoir les libérer en cas d'erreur
+    mp_obj_t spi = mp_const_none;
+    mp_obj_t cs = mp_const_none;
+    mp_obj_t inter = mp_const_none;
+
     if (nlr_push(&nlr) == 0) {
         mp_obj_t lan = MP_OBJ_FROM_PTR(&esp_network_get_lan_obj);
 
@@ -46,19 +53,19 @@ static mp_obj_t _get_lan(uint8_t print){
             MP_OBJ_NEW_QSTR(MP_QSTR_dma), MP_OBJ_NEW_SMALL_INT(2),
         };
 
-        mp_obj_t spi = MP_OBJ_TYPE_GET_SLOT(&machine_spi_type, make_new)((mp_obj_t)&machine_spi_type, 1, 1, spi_args);
+        spi = MP_OBJ_TYPE_GET_SLOT(&machine_spi_type, make_new)((mp_obj_t)&machine_spi_type, 1, 1, spi_args);
 
         mp_obj_t cs_args[] = {
             MP_OBJ_NEW_SMALL_INT(15),
         };
 
-        mp_obj_t cs = MP_OBJ_TYPE_GET_SLOT(&machine_pin_type, make_new)((mp_obj_t)&machine_pin_type, 1, 0, cs_args);
+        cs = MP_OBJ_TYPE_GET_SLOT(&machine_pin_type, make_new)((mp_obj_t)&machine_pin_type, 1, 0, cs_args);
 
         mp_obj_t int_args[] = {
             MP_OBJ_NEW_SMALL_INT(21),
         };
 
-        mp_obj_t inter = MP_OBJ_TYPE_GET_SLOT(&machine_pin_type, make_new)((mp_obj_t)&machine_pin_type, 1, 0, int_args);
+        inter = MP_OBJ_TYPE_GET_SLOT(&machine_pin_type, make_new)((mp_obj_t)&machine_pin_type, 1, 0, int_args);
 
         mp_obj_t lan_args[] = {
             MP_OBJ_NEW_QSTR(MP_QSTR_phy_addr), MP_OBJ_NEW_SMALL_INT(1),
@@ -71,12 +78,27 @@ static mp_obj_t _get_lan(uint8_t print){
         ret = mp_call_function_n_kw(lan, 0, 5, lan_args);
         nlr_pop();
     }else{
+        // Libérer les ressources en cas d'échec
+        if (spi != mp_const_none) {
+            // Déinitialiser le SPI
+            mp_obj_t deinit_meth[2];
+            mp_load_method(spi, MP_QSTR_deinit, deinit_meth);
+            mp_call_method_n_kw(0, 0, deinit_meth);
+
+            // Forcer les objets à NULL pour aider le GC
+            spi = mp_const_none;
+        }
+        cs = mp_const_none;
+        inter = mp_const_none;
+
+        // Forcer le garbage collection immédiatement
+        gc_collect();
+
         if(print)
             mp_printf(MP_PYTHON_PRINTER, "Eth adapter not found\n");
         return mp_const_none;
     }
     return ret;
-    
 }
 
 
@@ -98,14 +120,21 @@ static mp_obj_t ethernet_active(size_t n_args, const mp_obj_t *args) {
     // mp_obj_type_t* lan_type = mp_obj_get_type(_lan);
     // mp_map_t *locals_map_lan = &(MP_OBJ_TYPE_GET_SLOT(&lan_type,locals_dict)->map);
     // mp_map_elem_t *active = mp_map_lookup(locals_map_sensor, MP_OBJ_NEW_QSTR(MP_QSTR_active), MP_MAP_LOOKUP);
-    
+
     mp_obj_t meth[2 + n_args];
     mp_load_method(_lan, MP_QSTR_active, meth);
     if (args != NULL) {
         memcpy(meth + 2, args, n_args * sizeof(*args));
     }
 
-    return mp_call_method_n_kw(n_args, 0, meth);
+    mp_obj_t result = mp_call_method_n_kw(n_args, 0, meth);
+
+    // Si on désactive l'ethernet (active(False)), libérer l'objet LAN
+    if (n_args > 0 && !mp_obj_is_true(args[0])) {
+        _lan = NULL;
+    }
+
+    return result;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(ethernet_active_obj, 0, 1, ethernet_active);
 
@@ -222,6 +251,29 @@ static mp_obj_t ethernet_get_lan(void) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(ethernet_get_lan_obj, ethernet_get_lan);
 
+//| def deinit(self) -> None:
+//|     """Deinitialize the ethernet driver and free all resources
+//|     """
+//|
+//|     ...
+//|
+void ethernet_deinit(void) {
+    if(_lan != NULL && _lan != mp_const_none) {
+        // Désactiver l'ethernet avant de libérer
+        mp_obj_t act = mp_obj_new_bool(false);
+        ethernet_active(1, &act);
+
+        // Libérer l'objet LAN
+        _lan = NULL;
+    }
+}
+
+static mp_obj_t ethernet_deinit_obj(void) {
+    ethernet_deinit();
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_0(ethernet_deinit_fun_obj, ethernet_deinit_obj);
+
 
 static const mp_map_elem_t ethernet_module_globals_table[] = {
 	{ MP_ROM_QSTR(MP_QSTR___name__), 		MP_ROM_QSTR(MP_QSTR_ethernet) },
@@ -233,6 +285,7 @@ static const mp_map_elem_t ethernet_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_status), (mp_obj_t)(&ethernet_status_obj) },
     { MP_ROM_QSTR(MP_QSTR_ifconfig), (mp_obj_t)(&ethernet_ifconfig_obj) },
     { MP_ROM_QSTR(MP_QSTR_get_lan), (mp_obj_t)(&ethernet_get_lan_obj) },
+    { MP_ROM_QSTR(MP_QSTR_deinit), (mp_obj_t)(&ethernet_deinit_fun_obj) },
 };
 
 static MP_DEFINE_CONST_DICT (
