@@ -82,10 +82,30 @@ static mp_obj_t mp_thingz_display_raw_show(mp_obj_t self_in){
 
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_show_obj, mp_thingz_display_raw_show);
 
+// Helper function to parse coordinate (int or float)
+static inline int32_t parse_coordinate(mp_obj_t obj, const char* arg_name) {
+    if(mp_obj_is_int(obj)){
+        return mp_obj_get_int(obj);
+    }
+    const mp_obj_type_t* type = mp_obj_get_type(obj);
+    if(type == &mp_type_float){
+        return (int32_t)mp_obj_get_float(obj);
+    }
+    if(type == &mp_type_int){
+        mp_uint_t mpint;
+        mpz_t mp = ((mp_obj_int_t*)obj)->mpz;
+        if(mpz_as_uint_checked(&mp, &mpint)){
+            return (int32_t)mpint;
+        }
+        mp_raise_TypeError(arg_name);
+    }
+    return 0;
+}
+
 //|    def print(self, x:int, y:int, txt:str) -> None:
 //|        """
 //|        Print text at a given position
-//|        
+//|
 //|        :param int x: X position
 //|        :param int y: Y position
 //|        :param str txt: The text to print
@@ -93,47 +113,10 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_display_raw_show_obj, mp_thingz_display_raw_
 //|        ...
 //|
 static mp_obj_t mp_thingz_display_raw_print(size_t n_pos_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
-
-    thingz_display_raw_obj_t* raw = pos_args[0];
-
-    mp_obj_t x = pos_args[1];
-    mp_obj_t y = pos_args[2];
-    mp_obj_t str = pos_args[3];
-
-    const mp_obj_type_t* type = mp_obj_get_type(x);
-    int32_t coor[2] ={0};
-
-    if(mp_obj_is_int(x)){
-        coor[0] = mp_obj_get_int(x);
-    }else if(type == &mp_type_float){
-        coor[0] = (int32_t)mp_obj_get_float(x);
-    }else if(type == &mp_type_int){
-        mp_uint_t mpint;
-        mpz_t mp = ((mp_obj_int_t*)x)->mpz;
-        if(mpz_as_uint_checked(&mp, &mpint)){
-            coor[0] = (int32_t)mpint;
-        }else{
-            mp_raise_TypeError(("argument 'x': cannot get long"));
-        }
-    }
-
-    type = mp_obj_get_type(y);
-
-    if(mp_obj_is_int(y)){
-        coor[1] =  mp_obj_get_int(y);
-    }else if(type == &mp_type_float){
-        coor[1] = (int32_t)mp_obj_get_float(y);
-    }else if(type == &mp_type_int){
-        mp_uint_t mpint;
-        mpz_t mp = ((mp_obj_int_t*)y)->mpz;
-        if(mpz_as_uint_checked(&mp, &mpint)){
-            coor[1] = (uint8_t)mpint;
-        }else{
-            mp_raise_TypeError(("argument 'y': cannot get long"));
-        }
-    }
-    const char* s = mp_obj_str_get_str(str);
-    thingz_screen_raw_write(&(thingz_screen.raw), coor[0], coor[1], s, strlen(s), 0xffffffff);
+    int32_t x = parse_coordinate(pos_args[1], "argument 'x': cannot get long");
+    int32_t y = parse_coordinate(pos_args[2], "argument 'y': cannot get long");
+    const char* s = mp_obj_str_get_str(pos_args[3]);
+    thingz_screen_raw_write(&(thingz_screen.raw), x, y, s, strlen(s), 0xffffffff);
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_KW(mp_thingz_display_raw_print_obj, 4, mp_thingz_display_raw_print);
@@ -141,7 +124,7 @@ MP_DEFINE_CONST_FUN_OBJ_KW(mp_thingz_display_raw_print_obj, 4, mp_thingz_display
 //|    def print_bmp(self, x:int, y:int, path:str) -> None:
 //|        """
 //|        Print BMP file at a given position
-//|        
+//|
 //|        :param int x: X position
 //|        :param int y: Y position
 //|        :param str path: The path to the BMP file
@@ -149,47 +132,10 @@ MP_DEFINE_CONST_FUN_OBJ_KW(mp_thingz_display_raw_print_obj, 4, mp_thingz_display
 //|        ...
 //|
 static mp_obj_t mp_thingz_display_raw_print_bmp(size_t n_pos_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
-
-    thingz_display_raw_obj_t* raw = pos_args[0];
-
-    mp_obj_t x = pos_args[1];
-    mp_obj_t y = pos_args[2];
-    mp_obj_t str = pos_args[3];
-
-    const mp_obj_type_t* type = mp_obj_get_type(x);
-    int32_t coor[2] ={0};
-
-    if(mp_obj_is_int(x)){
-        coor[0] = mp_obj_get_int(x);
-    }else if(type == &mp_type_float){
-        coor[0] = (int32_t)mp_obj_get_float(x);
-    }else if(type == &mp_type_int){
-        mp_uint_t mpint;
-        mpz_t mp = ((mp_obj_int_t*)x)->mpz;
-        if(mpz_as_uint_checked(&mp, &mpint)){
-            coor[0] = (int32_t)mpint;
-        }else{
-            mp_raise_TypeError(("argument 'x': cannot get long"));
-        }
-    }
-
-    type = mp_obj_get_type(y);
-
-    if(mp_obj_is_int(y)){
-        coor[1] =  mp_obj_get_int(y);
-    }else if(type == &mp_type_float){
-        coor[1] = (int32_t)mp_obj_get_float(y);
-    }else if(type == &mp_type_int){
-        mp_uint_t mpint;
-        mpz_t mp = ((mp_obj_int_t*)y)->mpz;
-        if(mpz_as_uint_checked(&mp, &mpint)){
-            coor[1] = (uint8_t)mpint;
-        }else{
-            mp_raise_TypeError(("argument 'y': cannot get long"));
-        }
-    }
-    const char* s = mp_obj_str_get_str(str);
-    thingz_screen_raw_print_bmp(&(thingz_screen.raw), coor[0], coor[1], s, 0xFFFFFFFF, 1);
+    int32_t x = parse_coordinate(pos_args[1], "argument 'x': cannot get long");
+    int32_t y = parse_coordinate(pos_args[2], "argument 'y': cannot get long");
+    const char* s = mp_obj_str_get_str(pos_args[3]);
+    thingz_screen_raw_print_bmp(&(thingz_screen.raw), x, y, s, 0xFFFFFFFF, 1);
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_KW(mp_thingz_display_raw_print_bmp_obj, 4, mp_thingz_display_raw_print_bmp);

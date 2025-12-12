@@ -44,3 +44,8 @@ def get_lan(self) -> network.LAN:
     """Return the intern LAN object"""
 
     ...
+
+def deinit(self) -> None:
+    """Deinitialize the ethernet driver and free all resources"""
+
+    ...

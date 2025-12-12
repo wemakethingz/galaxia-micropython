@@ -27,6 +27,9 @@
 #define THINGZ_SCREEN_RAW_TRANSFER_ACTION_ADD 0
 #define THINGZ_SCREEN_RAW_TRANSFER_ACTION_REMOVE 1
 
+// Helper macro to convert RGB888 color to RGB565
+#define RGB888_TO_RGB565(color) rgb565_conv(((color)>>16)&0xFF, ((color)>>8)&0xFF, (color)&0xFF)
+
 typedef struct {
     uint8_t action;
     thingz_display_raw_img_obj_t* img;
@@ -34,6 +37,33 @@ typedef struct {
 
 static uint32_t _thingz_screen_read_word(uint16_t *bmp_header, uint16_t index) {
     return bmp_header[index] | bmp_header[index + 1] << 16;
+}
+
+// Helper function to decode pixel data based on bits per pixel
+static inline uint32_t _thingz_decode_pixel(uint32_t pixel_data, uint8_t bytes_per_pixel, uint8_t pixels_per_byte,
+                                             uint8_t bits_per_pixel, int16_t x, thingz_screen_bitmap_t *bitmap) {
+    if (bytes_per_pixel == 1) {
+        uint8_t offset = (x % pixels_per_byte) * bits_per_pixel;
+        uint8_t mask = (1 << bits_per_pixel) - 1;
+        return (pixel_data >> ((8 - bits_per_pixel) - offset)) & mask;
+    }
+    if (bytes_per_pixel == 2) {
+        uint8_t red, green, blue;
+        if (bitmap->g_bitmask == 0x07e0) { // 565
+            red = ((pixel_data & bitmap->r_bitmask) >> 11);
+            green = ((pixel_data & bitmap->g_bitmask) >> 5);
+            blue = ((pixel_data & bitmap->b_bitmask) >> 0);
+        } else { // 555
+            red = ((pixel_data & bitmap->r_bitmask) >> 10);
+            green = ((pixel_data & bitmap->g_bitmask) >> 4);
+            blue = ((pixel_data & bitmap->b_bitmask) >> 0);
+        }
+        return (red << 19 | green << 10 | blue << 3);
+    }
+    if ((bytes_per_pixel == 4) && (bitmap->bitfield_compressed)) {
+        return pixel_data & 0x00FFFFFF;
+    }
+    return pixel_data;
 }
 
 // void common_hal_displayio_ondiskbitmap_construct(displayio_ondiskbitmap_t *self, pyb_file_obj_t *file) {
@@ -130,52 +160,22 @@ static uint32_t _thingz_screen_read_word(uint16_t *bmp_header, uint16_t index) {
 // }
 
 
-uint32_t _thingz_get_pixel(thingz_screen_bitmap_t *bitmap,
-    int16_t x, int16_t y) {
+uint32_t _thingz_get_pixel(thingz_screen_bitmap_t *bitmap, int16_t x, int16_t y) {
     if (x < 0 || x >= bitmap->width || y < 0 || y >= bitmap->height) {
         return 0;
     }
 
-    uint32_t location;
-    uint8_t bytes_per_pixel = (bitmap->bits_per_pixel / 8)  ? (bitmap->bits_per_pixel / 8) : 1;
+    uint8_t bytes_per_pixel = (bitmap->bits_per_pixel / 8) ? (bitmap->bits_per_pixel / 8) : 1;
     uint8_t pixels_per_byte = 8 / bitmap->bits_per_pixel;
-    if (pixels_per_byte == 0) {
-        location = bitmap->data_offset + (bitmap->height - y - 1) * bitmap->stride + x * bytes_per_pixel;
-    } else {
-        location = bitmap->data_offset + (bitmap->height - y - 1) * bitmap->stride + x / pixels_per_byte;
-    }
-    // We don't cache here because the underlying FS caches sectors.
+
+    uint32_t location = bitmap->data_offset + (bitmap->height - y - 1) * bitmap->stride;
+    location += (pixels_per_byte == 0) ? x * bytes_per_pixel : x / pixels_per_byte;
+
     f_lseek(&bitmap->file->fp, location);
     UINT bytes_read;
     uint32_t pixel_data = 0;
-    uint32_t result = f_read(&bitmap->file->fp, &pixel_data, bytes_per_pixel, &bytes_read);
-    if (result == FR_OK) {
-        uint32_t tmp = 0;
-        uint8_t red;
-        uint8_t green;
-        uint8_t blue;
-        if (bytes_per_pixel == 1) {
-            uint8_t offset = (x % pixels_per_byte) * bitmap->bits_per_pixel;
-            uint8_t mask = (1 << bitmap->bits_per_pixel) - 1;
-
-            return (pixel_data >> ((8 - bitmap->bits_per_pixel) - offset)) & mask;
-        } else if (bytes_per_pixel == 2) {
-            if (bitmap->g_bitmask == 0x07e0) { // 565
-                red = ((pixel_data & bitmap->r_bitmask) >> 11);
-                green = ((pixel_data & bitmap->g_bitmask) >> 5);
-                blue = ((pixel_data & bitmap->b_bitmask) >> 0);
-            } else { // 555
-                red = ((pixel_data & bitmap->r_bitmask) >> 10);
-                green = ((pixel_data & bitmap->g_bitmask) >> 4);
-                blue = ((pixel_data & bitmap->b_bitmask) >> 0);
-            }
-            tmp = (red << 19 | green << 10 | blue << 3);
-            return tmp;
-        } else if ((bytes_per_pixel == 4) && (bitmap->bitfield_compressed)) {
-            return pixel_data & 0x00FFFFFF;
-        } else {
-            return pixel_data;
-        }
+    if (f_read(&bitmap->file->fp, &pixel_data, bytes_per_pixel, &bytes_read) == FR_OK) {
+        return _thingz_decode_pixel(pixel_data, bytes_per_pixel, pixels_per_byte, bitmap->bits_per_pixel, x, bitmap);
     }
     return 0;
 }
@@ -187,50 +187,20 @@ uint32_t _thingz_get_pixels(thingz_screen_bitmap_t *bitmap,
         return 0;
     }
 
-    uint32_t location;
-    uint8_t bytes_per_pixel = (bitmap->bits_per_pixel / 8)  ? (bitmap->bits_per_pixel / 8) : 1;
+    uint8_t bytes_per_pixel = (bitmap->bits_per_pixel / 8) ? (bitmap->bits_per_pixel / 8) : 1;
     uint8_t pixels_per_byte = 8 / bitmap->bits_per_pixel;
+    uint8_t width = (x2 - x) + 1;
 
-    for(uint8_t i = 0; i < (y2-y)+1; i++){
-        if (pixels_per_byte == 0) {
-            location = bitmap->data_offset + (bitmap->height - (y+i) - 1) * bitmap->stride + x * bytes_per_pixel;
-        } else {
-            location = bitmap->data_offset + (bitmap->height - (y+i) - 1) * bitmap->stride + x / pixels_per_byte;
-        }
-        // We don't cache here because the underlying FS caches sectors.
+    for(uint8_t i = 0; i <= (y2 - y); i++){
+        uint32_t location = bitmap->data_offset + (bitmap->height - (y + i) - 1) * bitmap->stride;
+        location += (pixels_per_byte == 0) ? x * bytes_per_pixel : x / pixels_per_byte;
+
         f_lseek(&bitmap->file->fp, location);
-        for(uint8_t j = 0; j < (x2-x)+1; j++){
+        for(uint8_t j = 0; j <= (x2 - x); j++){
             UINT bytes_read;
             uint32_t pixel_data = 0;
-            uint32_t pixel;
-            uint32_t result = f_read(&bitmap->file->fp, &pixel_data, bytes_per_pixel, &bytes_read);
-
-            if (result == FR_OK) {
-                uint32_t tmp = 0;
-                uint8_t red;
-                uint8_t green;
-                uint8_t blue;
-                if (bytes_per_pixel == 1) {
-                    uint8_t offset = (x % pixels_per_byte) * bitmap->bits_per_pixel;
-                    uint8_t mask = (1 << bitmap->bits_per_pixel) - 1;
-
-                    pixel = (pixel_data >> ((8 - bitmap->bits_per_pixel) - offset)) & mask;
-                } else if (bytes_per_pixel == 2) {
-                    if (bitmap->g_bitmask == 0x07e0) { // 565
-                        red = ((pixel_data & bitmap->r_bitmask) >> 11);
-                        green = ((pixel_data & bitmap->g_bitmask) >> 5);
-                        blue = ((pixel_data & bitmap->b_bitmask) >> 0);
-                    } else { // 555
-                        red = ((pixel_data & bitmap->r_bitmask) >> 10);
-                        green = ((pixel_data & bitmap->g_bitmask) >> 4);
-                        blue = ((pixel_data & bitmap->b_bitmask) >> 0);
-                    }
-                    pixel = (red << 19 | green << 10 | blue << 3);
-                } else if ((bytes_per_pixel == 4) && (bitmap->bitfield_compressed)) {
-                    pixel = pixel_data & 0x00FFFFFF;
-                } else {
-                    pixel = pixel_data;
-                }
+            if (f_read(&bitmap->file->fp, &pixel_data, bytes_per_pixel, &bytes_read) == FR_OK) {
+                uint32_t pixel = _thingz_decode_pixel(pixel_data, bytes_per_pixel, pixels_per_byte, bitmap->bits_per_pixel, x + j, bitmap);
 
                 if(bitmap->palette != NULL){
                     pixel = bitmap->palette[pixel];
@@ -238,12 +208,11 @@ uint32_t _thingz_get_pixels(thingz_screen_bitmap_t *bitmap,
                 if(pixel == 0xFFFFFF){
                     pixel = bitmap->white_replacement_color;
                 }
-                pixels[i*((x2-x)+1)+j] = rgb565_conv((pixel>>16)&0xFF, (pixel>>8)&0xFF, pixel&0xFF);
+                pixels[i * width + j] = RGB888_TO_RGB565(pixel);
             }
         }
-        
     }
-    
+
     return 0;
 }
 
@@ -272,36 +241,37 @@ void _thingz_screen_raw_add_show_obj_to_list(thingz_screen_raw_t* raw, mp_obj_t 
 void _thingz_screen_raw_remove_show_obj_from_list(thingz_screen_raw_t* raw, mp_obj_t obj){
     thingz_screen_raw_show_obj_t* o = raw->head;
 
-    if(o != NULL){
+    if(o == NULL){
+        return;
+    }
 
-        if(obj != NULL){
-            while(o->show_obj != obj && o->next == NULL){
-                o = o->next;
-            }
-            if(o->show_obj == obj){
-                thingz_screen_raw_show_obj_t* next = o->next;
-                thingz_screen_raw_show_obj_t* prev = o->prev;
-
-                if(prev){
-                    prev->next = next;
-                }else{
-                    raw->head = NULL;
-                }
-                free(o);
-            }
-        }else{
-            // mp_printf(MP_PYTHON_PRINTER, "Removing\n");
-            //Remove all
-            thingz_screen_raw_show_obj_t* o = raw->head;
-
-            while(o != NULL){
-                thingz_screen_raw_show_obj_t* next = o->next;
-                // mp_printf(MP_PYTHON_PRINTER,"Removing %p \n", o);
-                free(o);
-                o = next;
-            }
-            raw->head = NULL;
+    if(obj != NULL){
+        // Find the object to remove
+        while(o != NULL && o->show_obj != obj){
+            o = o->next;
         }
+        if(o != NULL && o->show_obj == obj){
+            thingz_screen_raw_show_obj_t* next = o->next;
+            thingz_screen_raw_show_obj_t* prev = o->prev;
+
+            if(prev){
+                prev->next = next;
+            }else{
+                raw->head = next;  // Update head to next, not NULL
+            }
+            if(next){
+                next->prev = prev;
+            }
+            free(o);
+        }
+    }else{
+        // Remove all objects
+        while(o != NULL){
+            thingz_screen_raw_show_obj_t* next = o->next;
+            free(o);
+            o = next;
+        }
+        raw->head = NULL;
     }
 }
 
@@ -342,36 +312,95 @@ static uint8_t _thingz_screen_raw_refresh_image(thingz_screen_raw_t *raw, thingz
     uint8_t printed = 0;
     if(img->show){
         if(img->screen_show == 0){
+            // First time showing - just draw it
             thingz_screen_raw_print_bmp(&(thingz_screen.raw), img->x, img->y, img->path, img->white_replacement_color, 1);
             printed = 1;
         }else{
-            uint8_t rect_s, rect_e, need_refresh = force_refresh;
-            if(img->screen_x != img->x){
-                need_refresh = 1;
-                if(img->x > img->screen_x){
-                    rect_s = img->screen_x;
-                    rect_e = (img->x < img->screen_x + img->bmp.width ? img->x : img->screen_x+img->bmp.width-1); 
-                }else{
-                    rect_s = (img->x + img->bmp.width < img->screen_x ? img->screen_x : img->x + img->bmp.width);
-                    rect_e = (img->screen_x+img->bmp.width-1);
-                }
-                thingz_screen_raw_fill_rect(&(thingz_screen.raw), rect_s, rect_e, img->screen_y, img->screen_y+img->bmp.height-1, 0);
+            uint8_t need_refresh = force_refresh;
 
-            }
-            if(img->screen_y != img->y){
-                need_refresh = 1;
-                if(img->y > img->screen_y){
-                    rect_s = img->screen_y;
-                    rect_e = (img->y < img->screen_y + img->bmp.height ? img->y : img->screen_y+img->bmp.height-1); 
-                }else{
-                    rect_s = (img->y + img->bmp.height < img->screen_y ? img->screen_y : img->y + img->bmp.height);
-                    rect_e = (img->screen_y+img->bmp.height-1);
+            // Clear parts no longer covered when position changes
+            // Detect if object is COMPLETELY off-screen (not visible at all)
+            uint8_t x_offscreen = (img->x >= MICROPY_THINGZ_SCREEN_WIDTH || img->x + (int16_t)img->bmp.width <= 0);
+            uint8_t y_offscreen = (img->y >= MICROPY_THINGZ_SCREEN_HEIGHT || img->y + (int16_t)img->bmp.height <= 0);
+            uint8_t screen_x_offscreen = (img->screen_x >= MICROPY_THINGZ_SCREEN_WIDTH || img->screen_x + (int16_t)img->bmp.width <= 0);
+            uint8_t screen_y_offscreen = (img->screen_y >= MICROPY_THINGZ_SCREEN_HEIGHT || img->screen_y + (int16_t)img->bmp.height <= 0);
+
+            // If old or new position is completely off-screen, clear old position entirely
+            if(screen_x_offscreen || screen_y_offscreen || x_offscreen || y_offscreen){
+                if(!screen_x_offscreen && !screen_y_offscreen){
+                    // Old position was visible, clear it (with clamping)
+                    int16_t clear_x_start = (img->screen_x < 0) ? 0 : img->screen_x;
+                    int16_t clear_x_end = (img->screen_x + img->bmp.width > MICROPY_THINGZ_SCREEN_WIDTH) ? MICROPY_THINGZ_SCREEN_WIDTH - 1 : img->screen_x + img->bmp.width - 1;
+                    int16_t clear_y_start = (img->screen_y < 0) ? 0 : img->screen_y;
+                    int16_t clear_y_end = (img->screen_y + img->bmp.height > MICROPY_THINGZ_SCREEN_HEIGHT) ? MICROPY_THINGZ_SCREEN_HEIGHT - 1 : img->screen_y + img->bmp.height - 1;
+                    if(clear_x_start <= clear_x_end && clear_y_start <= clear_y_end){
+                        thingz_screen_raw_fill_rect(&(thingz_screen.raw), clear_x_start, clear_x_end, clear_y_start, clear_y_end, 0);
+                    }
                 }
-                thingz_screen_raw_fill_rect(&(thingz_screen.raw), img->screen_x, img->screen_x+img->bmp.width-1, rect_s, rect_e, 0);
+                need_refresh = 1;
+            }else{
+                // Both positions at least partially visible, use optimized strip clearing
+                if(img->screen_x != img->x){
+                    need_refresh = 1;
+                    // Clear horizontal difference
+                    if(img->x > img->screen_x){
+                        // Moved right - clear left strip
+                        int16_t clear_start = (img->screen_x < 0) ? 0 : img->screen_x;
+                        int16_t clear_end = (img->x < 0) ? 0 : ((img->x >= MICROPY_THINGZ_SCREEN_WIDTH) ? MICROPY_THINGZ_SCREEN_WIDTH - 1 : img->x - 1);
+                        int16_t strip_y_start = (img->screen_y < 0) ? 0 : img->screen_y;
+                        int16_t strip_y_end = (img->screen_y + img->bmp.height > MICROPY_THINGZ_SCREEN_HEIGHT) ? MICROPY_THINGZ_SCREEN_HEIGHT - 1 : img->screen_y + img->bmp.height - 1;
+                        if(clear_start <= clear_end && strip_y_start <= strip_y_end){
+                            thingz_screen_raw_fill_rect(&(thingz_screen.raw), clear_start, clear_end, strip_y_start, strip_y_end, 0);
+                        }
+                    }
+                    if(img->x < img->screen_x){
+                        // Moved left - clear right strip
+                        int16_t clear_start = img->x + img->bmp.width;
+                        int16_t clear_end = img->screen_x + img->bmp.width - 1;
+                        // Clamp to screen bounds
+                        if(clear_start < 0) clear_start = 0;
+                        if(clear_end >= MICROPY_THINGZ_SCREEN_WIDTH) clear_end = MICROPY_THINGZ_SCREEN_WIDTH - 1;
+                        int16_t strip_y_start = (img->screen_y < 0) ? 0 : img->screen_y;
+                        int16_t strip_y_end = (img->screen_y + img->bmp.height > MICROPY_THINGZ_SCREEN_HEIGHT) ? MICROPY_THINGZ_SCREEN_HEIGHT - 1 : img->screen_y + img->bmp.height - 1;
+                        if(clear_start <= clear_end && strip_y_start <= strip_y_end){
+                            thingz_screen_raw_fill_rect(&(thingz_screen.raw), clear_start, clear_end, strip_y_start, strip_y_end, 0);
+                        }
+                    }
+                }
+
+                if(img->screen_y != img->y){
+                    need_refresh = 1;
+                    // Clear vertical difference
+                    if(img->y > img->screen_y){
+                        // Moved down - clear top strip
+                        int16_t clear_start = (img->screen_y < 0) ? 0 : img->screen_y;
+                        int16_t clear_end = (img->y < 0) ? 0 : ((img->y >= MICROPY_THINGZ_SCREEN_HEIGHT) ? MICROPY_THINGZ_SCREEN_HEIGHT - 1 : img->y - 1);
+                        int16_t strip_x_start = (img->screen_x < 0) ? 0 : img->screen_x;
+                        int16_t strip_x_end = (img->screen_x + img->bmp.width > MICROPY_THINGZ_SCREEN_WIDTH) ? MICROPY_THINGZ_SCREEN_WIDTH - 1 : img->screen_x + img->bmp.width - 1;
+                        if(clear_start <= clear_end && strip_x_start <= strip_x_end){
+                            thingz_screen_raw_fill_rect(&(thingz_screen.raw), strip_x_start, strip_x_end, clear_start, clear_end, 0);
+                        }
+                    }
+                    if(img->y < img->screen_y){
+                        // Moved up - clear bottom strip
+                        int16_t clear_start = img->y + img->bmp.height;
+                        int16_t clear_end = img->screen_y + img->bmp.height - 1;
+                        // Clamp to screen bounds
+                        if(clear_start < 0) clear_start = 0;
+                        if(clear_end >= MICROPY_THINGZ_SCREEN_HEIGHT) clear_end = MICROPY_THINGZ_SCREEN_HEIGHT - 1;
+                        int16_t strip_x_start = (img->screen_x < 0) ? 0 : img->screen_x;
+                        int16_t strip_x_end = (img->screen_x + img->bmp.width > MICROPY_THINGZ_SCREEN_WIDTH) ? MICROPY_THINGZ_SCREEN_WIDTH - 1 : img->screen_x + img->bmp.width - 1;
+                        if(clear_start <= clear_end && strip_x_start <= strip_x_end){
+                            thingz_screen_raw_fill_rect(&(thingz_screen.raw), strip_x_start, strip_x_end, clear_start, clear_end, 0);
+                        }
+                    }
+                }
             }
-            if(need_refresh){
-                printed = 1;
+
+            if(need_refresh && !x_offscreen && !y_offscreen){
+                // Draw at new position (overlapping parts are overwritten) - only if at least partially visible
                 thingz_screen_raw_print_bmp(&(thingz_screen.raw), img->x, img->y, img->path, img->white_replacement_color, 1);
+                printed = 1;
             }
         }
         img->screen_x = img->x;
@@ -379,7 +408,8 @@ static uint8_t _thingz_screen_raw_refresh_image(thingz_screen_raw_t *raw, thingz
         img->screen_show = 1;
     }else{
         if(img->screen_show){
-            thingz_screen_raw_fill_rect(&(thingz_screen.raw), img->x, img->x+img->bmp.width-1, img->y, img->y+img->bmp.height-1, 0);
+            thingz_screen_raw_fill_rect(&(thingz_screen.raw), img->screen_x, img->screen_x+img->bmp.width-1,
+                                       img->screen_y, img->screen_y+img->bmp.height-1, 0);
             img->screen_show = 0;
         }
     }
@@ -390,50 +420,96 @@ static uint8_t _thingz_screen_raw_refresh_rectangle(thingz_screen_raw_t *raw, th
     uint8_t printed = 0;
     if(rectangle->show){
         if(rectangle->screen_show == 0){
-            thingz_screen_raw_fill_rect(&(thingz_screen.raw), rectangle->x, rectangle->x+rectangle->width-1, rectangle->y, rectangle->y+rectangle->height-1, rgb565_conv((rectangle->color>>16)&0xFF, (rectangle->color>>8)&0xFF, rectangle->color&0xFF));
+            // First time showing - just draw it
+            thingz_screen_raw_fill_rect(&(thingz_screen.raw), rectangle->x, rectangle->x+rectangle->width-1, rectangle->y, rectangle->y+rectangle->height-1, RGB888_TO_RGB565(rectangle->color));
             printed = 1;
         }else{
-            uint8_t rect_s, rect_e, need_refresh = force_refresh;
-            if(rectangle->screen_x != rectangle->x){
-                need_refresh = 1;
-                if(rectangle->x > rectangle->screen_x){
-                    rect_s = rectangle->screen_x;
-                    rect_e = (rectangle->x < rectangle->screen_x + rectangle->screen_width ? rectangle->x : rectangle->screen_x+rectangle->screen_width-1); 
-                }else{
-                    rect_s = (rectangle->x + rectangle->width < rectangle->screen_x ? rectangle->screen_x : rectangle->x + rectangle->width);
-                    rect_e = (rectangle->screen_x+rectangle->width-1);
-                }
-                thingz_screen_raw_fill_rect(&(thingz_screen.raw), rect_s, rect_e, rectangle->screen_y, rectangle->screen_y+rectangle->height-1, 0);
+            uint8_t need_refresh = force_refresh;
 
-            }
-            if(rectangle->screen_y != rectangle->y){
-                need_refresh = 1;
-                if(rectangle->y > rectangle->screen_y){
-                    rect_s = rectangle->screen_y;
-                    rect_e = (rectangle->y < rectangle->screen_y + rectangle->screen_height ? rectangle->y : rectangle->screen_y+rectangle->screen_height-1); 
-                }else{
-                    rect_s = (rectangle->y + rectangle->height < rectangle->screen_y ? rectangle->screen_y : rectangle->y + rectangle->height);
-                    rect_e = (rectangle->screen_y+rectangle->height-1);
+            // Clear parts no longer covered when position/size changes
+            // Detect if rectangle is COMPLETELY off-screen
+            uint8_t x_offscreen = (rectangle->x >= MICROPY_THINGZ_SCREEN_WIDTH || rectangle->x + (int16_t)rectangle->width <= 0);
+            uint8_t y_offscreen = (rectangle->y >= MICROPY_THINGZ_SCREEN_HEIGHT || rectangle->y + (int16_t)rectangle->height <= 0);
+            uint8_t screen_x_offscreen = (rectangle->screen_x >= MICROPY_THINGZ_SCREEN_WIDTH || rectangle->screen_x + (int16_t)rectangle->screen_width <= 0);
+            uint8_t screen_y_offscreen = (rectangle->screen_y >= MICROPY_THINGZ_SCREEN_HEIGHT || rectangle->screen_y + (int16_t)rectangle->screen_height <= 0);
+
+            // If old or new position is completely off-screen, clear old position entirely
+            if(screen_x_offscreen || screen_y_offscreen || x_offscreen || y_offscreen){
+                if(!screen_x_offscreen && !screen_y_offscreen){
+                    int16_t clear_x_start = (rectangle->screen_x < 0) ? 0 : rectangle->screen_x;
+                    int16_t clear_x_end = (rectangle->screen_x + rectangle->screen_width > MICROPY_THINGZ_SCREEN_WIDTH) ? MICROPY_THINGZ_SCREEN_WIDTH - 1 : rectangle->screen_x + rectangle->screen_width - 1;
+                    int16_t clear_y_start = (rectangle->screen_y < 0) ? 0 : rectangle->screen_y;
+                    int16_t clear_y_end = (rectangle->screen_y + rectangle->screen_height > MICROPY_THINGZ_SCREEN_HEIGHT) ? MICROPY_THINGZ_SCREEN_HEIGHT - 1 : rectangle->screen_y + rectangle->screen_height - 1;
+                    if(clear_x_start <= clear_x_end && clear_y_start <= clear_y_end){
+                        thingz_screen_raw_fill_rect(&(thingz_screen.raw), clear_x_start, clear_x_end, clear_y_start, clear_y_end, 0);
+                    }
                 }
-                thingz_screen_raw_fill_rect(&(thingz_screen.raw), rectangle->screen_x, rectangle->screen_x+rectangle->width-1, rect_s, rect_e, 0);
-            }
-            if(rectangle->screen_width > rectangle->width){
                 need_refresh = 1;
-                rect_s = rectangle->width-1;
-                rect_e = rectangle->screen_width;
-                thingz_screen_raw_fill_rect(&(thingz_screen.raw), rect_s, rect_e, rectangle->screen_y, rectangle->screen_y, 0);
+            }else{
+                // Both positions at least partially visible, use optimized strip clearing
+                if(rectangle->screen_x != rectangle->x || rectangle->screen_width != rectangle->width){
+                    need_refresh = 1;
+                    // Clear horizontal difference
+                    if(rectangle->x > rectangle->screen_x){
+                        // Moved right - clear left strip
+                        int16_t clear_start = (rectangle->screen_x < 0) ? 0 : rectangle->screen_x;
+                        int16_t clear_end = (rectangle->x < 0) ? 0 : ((rectangle->x >= MICROPY_THINGZ_SCREEN_WIDTH) ? MICROPY_THINGZ_SCREEN_WIDTH - 1 : rectangle->x - 1);
+                        int16_t strip_y_start = (rectangle->screen_y < 0) ? 0 : rectangle->screen_y;
+                        int16_t strip_y_end = (rectangle->screen_y + rectangle->screen_height > MICROPY_THINGZ_SCREEN_HEIGHT) ? MICROPY_THINGZ_SCREEN_HEIGHT - 1 : rectangle->screen_y + rectangle->screen_height - 1;
+                        if(clear_start <= clear_end && strip_y_start <= strip_y_end){
+                            thingz_screen_raw_fill_rect(&(thingz_screen.raw), clear_start, clear_end, strip_y_start, strip_y_end, 0);
+                        }
+                    }
+                    if(rectangle->x + rectangle->width < rectangle->screen_x + rectangle->screen_width){
+                        // Shrank or moved left - clear right strip
+                        int16_t clear_start = rectangle->x + rectangle->width;
+                        int16_t clear_end = rectangle->screen_x + rectangle->screen_width - 1;
+                        if(clear_start < 0) clear_start = 0;
+                        if(clear_end >= MICROPY_THINGZ_SCREEN_WIDTH) clear_end = MICROPY_THINGZ_SCREEN_WIDTH - 1;
+                        int16_t strip_y_start = (rectangle->screen_y < 0) ? 0 : rectangle->screen_y;
+                        int16_t strip_y_end = (rectangle->screen_y + rectangle->screen_height > MICROPY_THINGZ_SCREEN_HEIGHT) ? MICROPY_THINGZ_SCREEN_HEIGHT - 1 : rectangle->screen_y + rectangle->screen_height - 1;
+                        if(clear_start <= clear_end && strip_y_start <= strip_y_end){
+                            thingz_screen_raw_fill_rect(&(thingz_screen.raw), clear_start, clear_end, strip_y_start, strip_y_end, 0);
+                        }
+                    }
+                }
+
+                if(rectangle->screen_y != rectangle->y || rectangle->screen_height != rectangle->height){
+                    need_refresh = 1;
+                    // Clear vertical difference
+                    if(rectangle->y > rectangle->screen_y){
+                        // Moved down - clear top strip
+                        int16_t clear_start = (rectangle->screen_y < 0) ? 0 : rectangle->screen_y;
+                        int16_t clear_end = (rectangle->y < 0) ? 0 : ((rectangle->y >= MICROPY_THINGZ_SCREEN_HEIGHT) ? MICROPY_THINGZ_SCREEN_HEIGHT - 1 : rectangle->y - 1);
+                        int16_t strip_x_start = (rectangle->screen_x < 0) ? 0 : rectangle->screen_x;
+                        int16_t strip_x_end = (rectangle->screen_x + rectangle->screen_width > MICROPY_THINGZ_SCREEN_WIDTH) ? MICROPY_THINGZ_SCREEN_WIDTH - 1 : rectangle->screen_x + rectangle->screen_width - 1;
+                        if(clear_start <= clear_end && strip_x_start <= strip_x_end){
+                            thingz_screen_raw_fill_rect(&(thingz_screen.raw), strip_x_start, strip_x_end, clear_start, clear_end, 0);
+                        }
+                    }
+                    if(rectangle->y + rectangle->height < rectangle->screen_y + rectangle->screen_height){
+                        // Shrank or moved up - clear bottom strip
+                        int16_t clear_start = rectangle->y + rectangle->height;
+                        int16_t clear_end = rectangle->screen_y + rectangle->screen_height - 1;
+                        if(clear_start < 0) clear_start = 0;
+                        if(clear_end >= MICROPY_THINGZ_SCREEN_HEIGHT) clear_end = MICROPY_THINGZ_SCREEN_HEIGHT - 1;
+                        int16_t strip_x_start = (rectangle->screen_x < 0) ? 0 : rectangle->screen_x;
+                        int16_t strip_x_end = (rectangle->screen_x + rectangle->screen_width > MICROPY_THINGZ_SCREEN_WIDTH) ? MICROPY_THINGZ_SCREEN_WIDTH - 1 : rectangle->screen_x + rectangle->screen_width - 1;
+                        if(clear_start <= clear_end && strip_x_start <= strip_x_end){
+                            thingz_screen_raw_fill_rect(&(thingz_screen.raw), strip_x_start, strip_x_end, clear_start, clear_end, 0);
+                        }
+                    }
+                }
             }
-            if(rectangle->screen_height > rectangle->height){
-                need_refresh = 1;
-                rect_s = rectangle->height-1;
-                rect_e = rectangle->screen_height;
-                thingz_screen_raw_fill_rect(&(thingz_screen.raw), rectangle->screen_x, rectangle->screen_x, rect_s, rect_e, 0);
-            }
+
             if(rectangle->color != rectangle->screen_color){
                 need_refresh = 1;
             }
-            if(need_refresh){
-                thingz_screen_raw_fill_rect(&(thingz_screen.raw), rectangle->x, rectangle->x+rectangle->width-1, rectangle->y, rectangle->y+rectangle->height-1, rgb565_conv((rectangle->color>>16)&0xFF, (rectangle->color>>8)&0xFF, rectangle->color&0xFF));
+
+            if(need_refresh && !x_offscreen && !y_offscreen){
+                // Draw at new position (overlapping parts are overwritten, reducing flicker) - only if at least partially visible
+                thingz_screen_raw_fill_rect(&(thingz_screen.raw), rectangle->x, rectangle->x+rectangle->width-1,
+                                           rectangle->y, rectangle->y+rectangle->height-1, RGB888_TO_RGB565(rectangle->color));
                 printed = 1;
             }
         }
@@ -445,7 +521,8 @@ static uint8_t _thingz_screen_raw_refresh_rectangle(thingz_screen_raw_t *raw, th
         rectangle->screen_show = 1;
     }else{
         if(rectangle->screen_show){
-            thingz_screen_raw_fill_rect(&(thingz_screen.raw), rectangle->x, rectangle->x+rectangle->width-1, rectangle->y, rectangle->y+rectangle->height-1, 0);
+            thingz_screen_raw_fill_rect(&(thingz_screen.raw), rectangle->screen_x, rectangle->screen_x+rectangle->screen_width-1,
+                                       rectangle->screen_y, rectangle->screen_y+rectangle->screen_height-1, 0);
             rectangle->screen_show = 0;
         }
     }
@@ -454,72 +531,102 @@ static uint8_t _thingz_screen_raw_refresh_rectangle(thingz_screen_raw_t *raw, th
 
 static uint8_t _thingz_screen_raw_refresh_text(thingz_screen_raw_t *raw, thingz_display_raw_text_obj_t* text, uint8_t force_refresh){
     uint8_t printed = 0;
-    uint8_t width, height;
     uint16_t len = strlen(text->text);
+    uint8_t height = raw->screen->params.font_height;
+    uint8_t width = raw->screen->params.font_width * len;
 
-    if(text->has_changed || text->screen_show == 0){
-        height = raw->screen->params.font_height;
-        width = raw->screen->params.font_width*len;
-    }else{
-        height = text->screen_height;
-        width = text->screen_width;
-    }
     if(text->show){
-
         if(text->screen_show == 0){
-
+            // First time showing - just draw it
             if(len == 0)
                 return printed;
             thingz_screen_raw_write(raw, text->x, text->y, text->text, len, text->color);
             printed = 1;
         }else{
-            uint8_t rect_s, rect_e, need_refresh = force_refresh;
+            uint8_t need_refresh = force_refresh || text->has_changed || (text->color != text->screen_color);
 
-            if(text->has_changed){
-                need_refresh = 1;
-            }
+            // Clear parts no longer covered when position/size changes
+            // Detect if text is COMPLETELY off-screen
+            uint8_t x_offscreen = (text->x >= MICROPY_THINGZ_SCREEN_WIDTH || text->x + (int16_t)width <= 0);
+            uint8_t y_offscreen = (text->y >= MICROPY_THINGZ_SCREEN_HEIGHT || text->y + (int16_t)height <= 0);
+            uint8_t screen_x_offscreen = (text->screen_x >= MICROPY_THINGZ_SCREEN_WIDTH || text->screen_x + (int16_t)text->screen_width <= 0);
+            uint8_t screen_y_offscreen = (text->screen_y >= MICROPY_THINGZ_SCREEN_HEIGHT || text->screen_y + (int16_t)text->screen_height <= 0);
 
-            if(text->screen_x != text->x){
-                need_refresh = 1;
-                if(text->x > text->screen_x){
-                    rect_s = text->screen_x;
-                    rect_e = (text->x < text->screen_x + width ? text->x : text->screen_x+width-1); 
-                }else{
-                    rect_s = (text->x + width < text->screen_x ? text->screen_x : text->x + width);
-                    rect_e = (text->screen_x+width-1);
+            // If old or new position is completely off-screen, clear old position entirely
+            if(screen_x_offscreen || screen_y_offscreen || x_offscreen || y_offscreen){
+                if(!screen_x_offscreen && !screen_y_offscreen){
+                    int16_t clear_x_start = (text->screen_x < 0) ? 0 : text->screen_x;
+                    int16_t clear_x_end = (text->screen_x + text->screen_width > MICROPY_THINGZ_SCREEN_WIDTH) ? MICROPY_THINGZ_SCREEN_WIDTH - 1 : text->screen_x + text->screen_width - 1;
+                    int16_t clear_y_start = (text->screen_y < 0) ? 0 : text->screen_y;
+                    int16_t clear_y_end = (text->screen_y + text->screen_height > MICROPY_THINGZ_SCREEN_HEIGHT) ? MICROPY_THINGZ_SCREEN_HEIGHT - 1 : text->screen_y + text->screen_height - 1;
+                    if(clear_x_start <= clear_x_end && clear_y_start <= clear_y_end){
+                        thingz_screen_raw_fill_rect(&(thingz_screen.raw), clear_x_start, clear_x_end, clear_y_start, clear_y_end, 0);
+                    }
                 }
-                thingz_screen_raw_fill_rect(&(thingz_screen.raw), rect_s, rect_e, text->screen_y, text->screen_y+height-1, 0);
-
-            }
-            if(text->screen_y != text->y){
                 need_refresh = 1;
-                if(text->y > text->screen_y){
-                    rect_s = text->screen_y;
-                    rect_e = (text->y < text->screen_y + height ? text->y : text->screen_y+height-1); 
-                }else{
-                    rect_s = (text->y + height < text->screen_y ? text->screen_y : text->y + height);
-                    rect_e = (text->screen_y+height-1);
+            }else{
+                // Both positions at least partially visible, use optimized strip clearing
+                if(text->screen_x != text->x || text->screen_width != width){
+                    need_refresh = 1;
+                    // Clear horizontal difference
+                    if(text->x > text->screen_x){
+                        // Moved right - clear left strip
+                        int16_t clear_start = (text->screen_x < 0) ? 0 : text->screen_x;
+                        int16_t clear_end = (text->x < 0) ? 0 : ((text->x >= MICROPY_THINGZ_SCREEN_WIDTH) ? MICROPY_THINGZ_SCREEN_WIDTH - 1 : text->x - 1);
+                        int16_t strip_y_start = (text->screen_y < 0) ? 0 : text->screen_y;
+                        int16_t strip_y_end = (text->screen_y + text->screen_height > MICROPY_THINGZ_SCREEN_HEIGHT) ? MICROPY_THINGZ_SCREEN_HEIGHT - 1 : text->screen_y + text->screen_height - 1;
+                        if(clear_start <= clear_end && strip_y_start <= strip_y_end){
+                            thingz_screen_raw_fill_rect(&(thingz_screen.raw), clear_start, clear_end, strip_y_start, strip_y_end, 0);
+                        }
+                    }
+                    if(text->x + width < text->screen_x + text->screen_width){
+                        // Shrank or moved left - clear right strip
+                        int16_t clear_start = text->x + width;
+                        int16_t clear_end = text->screen_x + text->screen_width - 1;
+                        if(clear_start < 0) clear_start = 0;
+                        if(clear_end >= MICROPY_THINGZ_SCREEN_WIDTH) clear_end = MICROPY_THINGZ_SCREEN_WIDTH - 1;
+                        int16_t strip_y_start = (text->screen_y < 0) ? 0 : text->screen_y;
+                        int16_t strip_y_end = (text->screen_y + text->screen_height > MICROPY_THINGZ_SCREEN_HEIGHT) ? MICROPY_THINGZ_SCREEN_HEIGHT - 1 : text->screen_y + text->screen_height - 1;
+                        if(clear_start <= clear_end && strip_y_start <= strip_y_end){
+                            thingz_screen_raw_fill_rect(&(thingz_screen.raw), clear_start, clear_end, strip_y_start, strip_y_end, 0);
+                        }
+                    }
                 }
-                thingz_screen_raw_fill_rect(&(thingz_screen.raw), text->screen_x, text->screen_x+width-1, rect_s, rect_e, 0);
+
+                if(text->screen_y != text->y || text->screen_height != height){
+                    need_refresh = 1;
+                    // Clear vertical difference
+                    if(text->y > text->screen_y){
+                        // Moved down - clear top strip
+                        int16_t clear_start = (text->screen_y < 0) ? 0 : text->screen_y;
+                        int16_t clear_end = (text->y < 0) ? 0 : ((text->y >= MICROPY_THINGZ_SCREEN_HEIGHT) ? MICROPY_THINGZ_SCREEN_HEIGHT - 1 : text->y - 1);
+                        int16_t strip_x_start = (text->screen_x < 0) ? 0 : text->screen_x;
+                        int16_t strip_x_end = (text->screen_x + text->screen_width > MICROPY_THINGZ_SCREEN_WIDTH) ? MICROPY_THINGZ_SCREEN_WIDTH - 1 : text->screen_x + text->screen_width - 1;
+                        if(clear_start <= clear_end && strip_x_start <= strip_x_end){
+                            thingz_screen_raw_fill_rect(&(thingz_screen.raw), strip_x_start, strip_x_end, clear_start, clear_end, 0);
+                        }
+                    }
+                    if(text->y + height < text->screen_y + text->screen_height){
+                        // Shrank or moved up - clear bottom strip
+                        int16_t clear_start = text->y + height;
+                        int16_t clear_end = text->screen_y + text->screen_height - 1;
+                        if(clear_start < 0) clear_start = 0;
+                        if(clear_end >= MICROPY_THINGZ_SCREEN_HEIGHT) clear_end = MICROPY_THINGZ_SCREEN_HEIGHT - 1;
+                        int16_t strip_x_start = (text->screen_x < 0) ? 0 : text->screen_x;
+                        int16_t strip_x_end = (text->screen_x + text->screen_width > MICROPY_THINGZ_SCREEN_WIDTH) ? MICROPY_THINGZ_SCREEN_WIDTH - 1 : text->screen_x + text->screen_width - 1;
+                        if(clear_start <= clear_end && strip_x_start <= strip_x_end){
+                            thingz_screen_raw_fill_rect(&(thingz_screen.raw), strip_x_start, strip_x_end, clear_start, clear_end, 0);
+                        }
+                    }
+                }
             }
-            if(text->screen_width > width){
-                need_refresh = 1;
-                rect_s = width-1;
-                rect_e = text->screen_width;
-                thingz_screen_raw_fill_rect(&(thingz_screen.raw), rect_s, rect_e, text->screen_y, text->screen_y, 0);
-            }
-            if(text->screen_height > height){
-                need_refresh = 1;
-                rect_s = height-1;
-                rect_e = text->screen_height;
-                thingz_screen_raw_fill_rect(&(thingz_screen.raw), text->screen_x, text->screen_x, rect_s, rect_e, 0);
-            }
-            if(text->color != text->screen_color){
-                need_refresh = 1;
-            }
-            if(need_refresh){
+
+            if(need_refresh && !x_offscreen && !y_offscreen){
+                // Draw at new position (overlapping parts are overwritten) - only if at least partially visible
+                if(len > 0){
+                    thingz_screen_raw_write(raw, text->x, text->y, text->text, len, text->color);
+                }
                 printed = 1;
-                thingz_screen_raw_write(raw, text->x, text->y, text->text, len, text->color);
             }
         }
         text->screen_x = text->x;
@@ -531,89 +638,68 @@ static uint8_t _thingz_screen_raw_refresh_text(thingz_screen_raw_t *raw, thingz_
         text->screen_show = 1;
     }else{
         if(text->screen_show){
-            thingz_screen_raw_fill_rect(&(thingz_screen.raw), text->x, text->x+width-1, text->y, text->y+height-1, 0);
+            thingz_screen_raw_fill_rect(&(thingz_screen.raw), text->screen_x, text->screen_x+text->screen_width-1,
+                                       text->screen_y, text->screen_y+text->screen_height-1, 0);
             text->screen_show = 0;
         }
     }
     return printed;
 }
 
+// Helper to extract object properties
+typedef struct {
+    uint8_t x, y, width, height;
+    uint8_t sx, sy, swidth, sheight;
+} obj_bounds_t;
+
+static inline void _thingz_get_obj_bounds(mp_obj_t obj, obj_bounds_t *bounds) {
+    if(mp_obj_is_type(obj, &mp_thingz_display_raw_rectangle_type)){
+        thingz_display_raw_rectangle_obj_t* rect = obj;
+        bounds->x = rect->x;
+        bounds->y = rect->y;
+        bounds->width = rect->width;
+        bounds->height = rect->height;
+        bounds->sx = rect->screen_x;
+        bounds->sy = rect->screen_y;
+        bounds->swidth = rect->screen_width;
+        bounds->sheight = rect->screen_height;
+    }else if(mp_obj_is_type(obj, &mp_thingz_display_raw_img_type)){
+        thingz_display_raw_img_obj_t* img = obj;
+        bounds->x = img->x;
+        bounds->y = img->y;
+        bounds->width = img->bmp.width;
+        bounds->height = img->bmp.height;
+        bounds->sx = img->screen_x;
+        bounds->sy = img->screen_y;
+        bounds->swidth = img->bmp.width;
+        bounds->sheight = img->bmp.height;
+    }else if(mp_obj_is_type(obj, &mp_thingz_display_raw_text_type)){
+        thingz_display_raw_text_obj_t* text = obj;
+        bounds->x = text->x;
+        bounds->y = text->y;
+        bounds->width = text->screen_width;
+        bounds->height = text->screen_height;
+        bounds->sx = text->screen_x;
+        bounds->sy = text->screen_y;
+        bounds->swidth = text->screen_width;
+        bounds->sheight = text->screen_height;
+    }
+}
+
 static uint8_t _thingz_screen_raw_is_overlapping(thingz_screen_raw_show_obj_t* o1, thingz_screen_raw_show_obj_t* o2){
-    uint8_t o1_x=0, o1_y=0, o1_width=0, o1_height=0, o1_sx=0, o1_sy=0, o1_swidth=0, o1_sheight=0;
-    uint8_t o2_x=0, o2_y=0, o2_width=0, o2_height=0, o2_sx=0, o2_sy=0, o2_swidth=0, o2_sheight=0;
+    obj_bounds_t b1 = {0}, b2 = {0};
+    _thingz_get_obj_bounds(o1->show_obj, &b1);
+    _thingz_get_obj_bounds(o2->show_obj, &b2);
 
-    if(mp_obj_is_type(o1->show_obj, &mp_thingz_display_raw_rectangle_type)){
-        thingz_display_raw_rectangle_obj_t* rect = o1->show_obj;
-        o1_x = rect->x;
-        o1_y = rect->y;
-        o1_width = rect->width;
-        o1_height = rect->height;
-        o1_sx = rect->screen_x;
-        o1_sy = rect->screen_y;
-        o1_swidth = rect->screen_width;
-        o1_sheight = rect->screen_height;
-    }else if(mp_obj_is_type(o1->show_obj, &mp_thingz_display_raw_img_type)){
-        thingz_display_raw_img_obj_t* img = o1->show_obj;
-        o1_x = img->x;
-        o1_y = img->y;
-        o1_width = img->bmp.width;
-        o1_height = img->bmp.height;
-        o1_sx = img->screen_x;
-        o1_sy = img->screen_y;
-        o1_swidth = img->bmp.width;
-        o1_sheight = img->bmp.height;
-    }else if(mp_obj_is_type(o1->show_obj, &mp_thingz_display_raw_text_type)){
-        thingz_display_raw_text_obj_t* text = o1->show_obj;
-        o1_x = text->x;
-        o1_y = text->y;
-        o1_width = text->screen_width;
-        o1_height = text->screen_height;
-        o1_sx = text->screen_x;
-        o1_sy = text->screen_y;
-        o1_swidth = text->screen_width;
-        o1_sheight = text->screen_height;
-    }
-    if(mp_obj_is_type(o2->show_obj, &mp_thingz_display_raw_rectangle_type)){
-        thingz_display_raw_rectangle_obj_t* rect = o2->show_obj;
-        o2_x = rect->x;
-        o2_y = rect->y;
-        o2_width = rect->width;
-        o2_height = rect->height;
-        o2_sx = rect->screen_x;
-        o2_sy = rect->screen_y;
-        o2_swidth = rect->screen_width;
-        o2_sheight = rect->screen_height;
-    }else if(mp_obj_is_type(o2->show_obj, &mp_thingz_display_raw_img_type)){
-        thingz_display_raw_img_obj_t* img = o2->show_obj;
-        o2_x = img->x;
-        o2_y = img->y;
-        o2_width = img->bmp.width;
-        o2_height = img->bmp.height;
-        o2_sx = img->screen_x;
-        o2_sy = img->screen_y;
-        o2_swidth = img->bmp.width;
-        o2_sheight = img->bmp.height;
-    }else if(mp_obj_is_type(o1->show_obj, &mp_thingz_display_raw_text_type)){
-        thingz_display_raw_text_obj_t* text = o1->show_obj;
-        o2_x = text->x;
-        o2_y = text->y;
-        o2_width = text->screen_width;
-        o2_height = text->screen_height;
-        o2_sx = text->screen_x;
-        o2_sy = text->screen_y;
-        o2_swidth = text->screen_width;
-        o2_sheight = text->screen_height;
-    }
-
-    return ((o1_sx <= o2_sx && o2_sx <= o1_sx+o1_swidth-1)
-    ||     (o1_sx <= o2_sx+o2_swidth-1 && o2_sx+o2_swidth-1 <= o1_sx+o1_swidth-1)
-    ||     (o1_sy <= o2_sy && o2_sy <= o1_sy+o1_sheight-1)
-    ||     (o1_sy <= o2_sy+o2_sheight-1 && o2_sy+o2_sheight-1 <= o1_sy+o1_sheight-1))
+    return ((b1.sx <= b2.sx && b2.sx <= b1.sx+b1.swidth-1)
+    ||     (b1.sx <= b2.sx+b2.swidth-1 && b2.sx+b2.swidth-1 <= b1.sx+b1.swidth-1)
+    ||     (b1.sy <= b2.sy && b2.sy <= b1.sy+b1.sheight-1)
+    ||     (b1.sy <= b2.sy+b2.sheight-1 && b2.sy+b2.sheight-1 <= b1.sy+b1.sheight-1))
     &&(    //if there is no change of object o2 we don't need to refresh o1
-           (o2_sx != o2_x)
-    ||     (o2_sy != o2_y)
-    ||     (o2_swidth != o2_width)
-    ||     (o2_sheight != o2_height)    
+           (b2.sx != b2.x)
+    ||     (b2.sy != b2.y)
+    ||     (b2.swidth != b2.width)
+    ||     (b2.sheight != b2.height)
     ||     (o2->was_updated)
     );
 }
@@ -690,14 +776,14 @@ void thingz_screen_raw_refresh(thingz_screen_raw_t *raw){
     mp_sched_schedule((mp_obj_t)&mp_thingz_screen_raw_refresh_obj, raw);
 }
 
-mp_uint_t thingz_screen_raw_write(thingz_screen_raw_t *raw, uint8_t x, uint8_t y, const void *buf, mp_uint_t size, uint32_t color){
-    uint8_t rotation = 1;
-
-    thingz_screen_print_screen(buf, size, x, MICROPY_THINGZ_SCREEN_HEIGHT-1-y-raw->screen->params.font_height+1, rgb565_conv((color>>16)&0xFF, (color>>8)&0xFF, color&0xFF), 1);
+mp_uint_t thingz_screen_raw_write(thingz_screen_raw_t *raw, int16_t x, int16_t y, const void *buf, mp_uint_t size, uint32_t color){
+    // Clamp coordinates for partial visibility
+    if(x < 0 || x >= MICROPY_THINGZ_SCREEN_WIDTH || y < 0 || y >= MICROPY_THINGZ_SCREEN_HEIGHT) return size;
+    thingz_screen_print_screen(buf, size, x, MICROPY_THINGZ_SCREEN_HEIGHT-1-y-raw->screen->params.font_height+1, RGB888_TO_RGB565(color), 1);
     return size;
 }
 
-thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, uint8_t x, uint8_t y, const char *file, uint32_t white_replacement_color, uint8_t show){
+thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int16_t x, int16_t y, const char *file, uint32_t white_replacement_color, uint8_t show){
     thingz_screen_bitmap_t bitmap;
     bitmap.shown = 0;
     mp_obj_t args[] = {
@@ -790,6 +876,21 @@ thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, uin
     }
 
     if(show){
+        // Calculate visible portion of image for clipping
+        int16_t clip_x_start = (x < 0) ? 0 : x;
+        int16_t clip_y_start = (y < 0) ? 0 : y;
+        int16_t clip_x_end = (x + bitmap.width > MICROPY_THINGZ_SCREEN_WIDTH) ? MICROPY_THINGZ_SCREEN_WIDTH : x + bitmap.width;
+        int16_t clip_y_end = (y + bitmap.height > MICROPY_THINGZ_SCREEN_HEIGHT) ? MICROPY_THINGZ_SCREEN_HEIGHT : y + bitmap.height;
+
+        // Check if image is completely off-screen
+        if(x >= MICROPY_THINGZ_SCREEN_WIDTH || y >= MICROPY_THINGZ_SCREEN_HEIGHT ||
+           x + bitmap.width <= 0 || y + bitmap.height <= 0) {
+            // Completely off-screen, skip drawing but keep bitmap metadata
+            if(bitmap.palette) m_free(bitmap.palette);
+            f_close(&f->fp);
+            return bitmap;
+        }
+
         uint8_t bytes_per_pixel = (bitmap.bits_per_pixel / 8)  ? (bitmap.bits_per_pixel / 8) : 1;
         uint8_t pixels_per_byte = 8 / bitmap.bits_per_pixel;
         if (pixels_per_byte == 0) {
@@ -806,42 +907,51 @@ thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, uin
             bitmap.stride = (bit_stride / 8);
         }
         bool rotation = true;
+
+        // Calculate which rows to draw (for clipping in X)
+        int row_start = (x < 0) ? -x : 0;
+        int row_end = (x + bitmap.width > MICROPY_THINGZ_SCREEN_WIDTH) ? MICROPY_THINGZ_SCREEN_WIDTH - x : bitmap.width;
+
+        // Calculate visible height for clipping in Y (with rotation, Y maps to LCD X)
+        int16_t visible_y_start = (y < 0) ? 0 : y;
+        int16_t visible_y_end = (y + bitmap.height > MICROPY_THINGZ_SCREEN_HEIGHT) ? MICROPY_THINGZ_SCREEN_HEIGHT : y + bitmap.height;
+        int16_t visible_height = visible_y_end - visible_y_start;
+        int16_t y_offset = (y < 0) ? -y : 0;  // Offset into bitmap if partially off top
+
+        if(visible_height <= 0) {
+            // No visible portion in Y
+            return bitmap;
+        }
+
         uint16_t *colors = (uint16_t*)m_malloc(sizeof(uint16_t) * (rotation ? bitmap.height : bitmap.width));
         uint8_t _x = 0, _x2, _y, _y2;
-        for (int row=0; row< (rotation ? bitmap.width : bitmap.height); row++) { // For each scanline...
-            
-            // int index = 0;
+        for (int row=row_start; row< row_end; row++) { // Draw only visible rows
+
             _x = rotation ? row : 0;
             _x2 = rotation ? row : bitmap.width-1;
-            _y = rotation ? 0 : row;
-            _y2 = rotation ? bitmap.height-1 : row;
+            _y = rotation ? y_offset : row;  // Start from y_offset if clipped at top
+            _y2 = rotation ? (y_offset + visible_height - 1) : row;  // End at visible portion
             _thingz_get_pixels(&bitmap, _x, _y, _x2, _y2, colors);
-            
+
             if(rotation){
                 uint16_t color;
-                for(int i = 0; i < bitmap.height/2; i++){
+                int swap_len = visible_height / 2;
+                for(int i = 0; i < swap_len; i++){
                     color = colors[i];
-                    colors[i] = colors[bitmap.height-1-i];
-                    colors[bitmap.height-1-i] = color;
+                    colors[i] = colors[visible_height-1-i];
+                    colors[visible_height-1-i] = color;
                 }
             }
 
-            // for(int col=0; col < (rotation ? bitmap.height : bitmap.width); col++){
-            //     _x = rotation ? row : col;
-            //     _y = rotation ? col : row;
-            //     uint32_t pixel = _thingz_get_pixel(&bitmap, _x, _y);
-            //     if(bitmap.palette != NULL){
-            //         pixel = bitmap.palette[pixel];
-            //     }
-            //     colors[col] = rgb565_conv((pixel>>16)&0xFF, (pixel>>8)&0xFF, pixel&0xFF);
+            // Calculate LCD coordinates (with rotation: user Y → LCD X, user X → LCD Y)
+            int16_t draw_x_coord = MICROPY_THINGZ_SCREEN_HEIGHT - visible_height - visible_y_start;
+            int16_t draw_y_coord = x + row;
 
-            // }
-            
-            // ESP_LOGD(__FUNCTION__,"lcdDrawMultiPixels row=%d",row);
-            lcdDrawMultiPixels(&(thingz_screen.dev), rotation ? MICROPY_THINGZ_SCREEN_HEIGHT-bitmap.height-y : x, rotation ? x+row : y+row, rotation ? bitmap.height : bitmap.width, colors);
-            // lcdDrawMultiPixels(&(thingz_screen.dev), 0, row, rotation ? bitmap.height : bitmap.width, colors);
-            bitmap.shown = 1;
-            _x++;
+            // Draw visible portion only
+            if(draw_y_coord >= 0 && draw_y_coord < MICROPY_THINGZ_SCREEN_WIDTH) {
+                lcdDrawMultiPixels(&(thingz_screen.dev), draw_x_coord, draw_y_coord, visible_height, colors);
+                bitmap.shown = 1;
+            }
         } // end for row
 
         m_free(colors);
@@ -963,7 +1073,16 @@ thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, uin
 //     return 0;
 }
 
-void thingz_screen_raw_fill_rect(thingz_screen_raw_t* raw, uint8_t x, uint8_t x2, uint8_t y, uint8_t y2, uint16_t color){
+void thingz_screen_raw_fill_rect(thingz_screen_raw_t* raw, int16_t x, int16_t x2, int16_t y, int16_t y2, uint16_t color){
+    // Clamp coordinates to screen bounds (handle partial visibility)
+    if(x < 0) x = 0;
+    if(y < 0) y = 0;
+    if(x2 >= MICROPY_THINGZ_SCREEN_WIDTH) x2 = MICROPY_THINGZ_SCREEN_WIDTH - 1;
+    if(y2 >= MICROPY_THINGZ_SCREEN_HEIGHT) y2 = MICROPY_THINGZ_SCREEN_HEIGHT - 1;
+
+    // Ensure proper ordering and valid rectangle
+    if(x > x2 || y > y2 || x >= MICROPY_THINGZ_SCREEN_WIDTH || y >= MICROPY_THINGZ_SCREEN_HEIGHT) return;
+
     bool rotation = true;
     lcdDrawFillRect(&(thingz_screen.dev), rotation ? MICROPY_THINGZ_SCREEN_HEIGHT-1-y2 :x , rotation ? x : y, rotation ? MICROPY_THINGZ_SCREEN_HEIGHT-1-y : x2, rotation ? x2 : y2, color);
 

@@ -28,11 +28,7 @@
 
 mp_obj_t mp_thingz_display_raw_img_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     mp_arg_check_num(n_args, n_kw, 4, 4, false);
-    // get the wanted pin object
-    if(n_args < 4){
-        mp_raise_ValueError(MP_ERROR_TEXT("invalid args"));
-        return mp_const_none;
-    }
+
     int x = mp_obj_get_int(args[0]);
     int y = mp_obj_get_int(args[1]);
     char* path = mp_obj_str_get_str(args[2]);
@@ -48,7 +44,7 @@ mp_obj_t mp_thingz_display_raw_img_make_new(const mp_obj_type_t *type, size_t n_
     self->show = 0;
     self->screen_show = 0;
     self->white_replacement_color = color;
-    self->bmp = thingz_screen_raw_print_bmp(&(thingz_screen.raw), self->x, self->y, self->path, self->white_replacement_color, 0);    
+    self->bmp = thingz_screen_raw_print_bmp(&(thingz_screen.raw), self->x, self->y, self->path, self->white_replacement_color, 0);
     thingz_screen_raw_add_show_obj(&(thingz_screen.raw), self);
     return MP_OBJ_FROM_PTR(self);
 }
@@ -65,13 +61,8 @@ static mp_obj_t mp_thingz_display_raw_img_show(mp_obj_t self_in, mp_obj_t show) 
     thingz_display_raw_img_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if(!mp_obj_is_bool(show)){
         mp_raise_ValueError(MP_ERROR_TEXT("invalid arg type"));
-        return mp_const_none;
     }
-    if(show == mp_const_false){
-        self->show = 0;
-    }else{
-        self->show = 1;
-    }
+    self->show = (show == mp_const_true) ? 1 : 0;
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_img_show_obj, mp_thingz_display_raw_img_show);
@@ -86,13 +77,7 @@ MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_img_show_obj, mp_thingz_display_
 //|
 static mp_obj_t mp_thingz_display_raw_img_x(mp_obj_t self_in, mp_obj_t x) {
     thingz_display_raw_img_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    if(!mp_obj_is_int(x)){
-        mp_raise_ValueError(MP_ERROR_TEXT("invalid arg type"));
-        return mp_const_none;
-    }
-    uint8_t new_x = mp_obj_get_int(x);
-    
-    self->x = new_x;
+    self->x = mp_obj_get_int(x);
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_img_x_obj, mp_thingz_display_raw_img_x);
@@ -108,13 +93,7 @@ MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_img_x_obj, mp_thingz_display_raw
 //|
 static mp_obj_t mp_thingz_display_raw_img_y(mp_obj_t self_in, mp_obj_t y) {
     thingz_display_raw_img_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    if(!mp_obj_is_int(y)){
-        mp_raise_ValueError(MP_ERROR_TEXT("invalid arg type"));
-        return mp_const_none;
-    }
-    uint8_t new_y = mp_obj_get_int(y);
-    self->y = new_y;
-    
+    self->y = mp_obj_get_int(y);
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_img_y_obj, mp_thingz_display_raw_img_y);
@@ -129,13 +108,7 @@ MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_img_y_obj, mp_thingz_display_raw
 //|
 static mp_obj_t mp_thingz_display_raw_img_white_replacement_color(mp_obj_t self_in, mp_obj_t white_replacement_color) {
     thingz_display_raw_img_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    if(!mp_obj_is_int(white_replacement_color)){
-        mp_raise_ValueError(MP_ERROR_TEXT("invalid arg type"));
-        return mp_const_none;
-    }
-    uint32_t new_white_replacement_color = mp_obj_get_int(white_replacement_color);
-    self->white_replacement_color = new_white_replacement_color;
-    
+    self->white_replacement_color = mp_obj_get_int(white_replacement_color);
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_img_white_replacement_color_obj, mp_thingz_display_raw_img_white_replacement_color);

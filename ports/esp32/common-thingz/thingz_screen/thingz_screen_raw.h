@@ -57,9 +57,9 @@ typedef struct {
 
 void thingz_screen_raw_init(thingz_screen_raw_t *raw, thingz_screen_obj_t *screen);
 void thingz_screen_raw_refresh(thingz_screen_raw_t *raw);
-mp_uint_t thingz_screen_raw_write(thingz_screen_raw_t *raw, uint8_t x, uint8_t y, const void *buf, mp_uint_t size, uint32_t color);
-thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, uint8_t x, uint8_t y, const char *file, uint32_t white_replacement_color, uint8_t show);
-void thingz_screen_raw_fill_rect(thingz_screen_raw_t* raw, uint8_t x, uint8_t x2, uint8_t y, uint8_t y2, uint16_t color);
+mp_uint_t thingz_screen_raw_write(thingz_screen_raw_t *raw, int16_t x, int16_t y, const void *buf, mp_uint_t size, uint32_t color);
+thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int16_t x, int16_t y, const char *file, uint32_t white_replacement_color, uint8_t show);
+void thingz_screen_raw_fill_rect(thingz_screen_raw_t* raw, int16_t x, int16_t x2, int16_t y, int16_t y2, uint16_t color);
 
 void thingz_screen_raw_enter(thingz_screen_raw_t *raw);
 void thingz_screen_raw_exit(thingz_screen_raw_t *raw);

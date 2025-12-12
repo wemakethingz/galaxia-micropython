@@ -8,10 +8,10 @@
 typedef struct _thingz_display_raw_img_obj_t {
     mp_obj_base_t base;
     char* path;
-    uint8_t x;
-    uint8_t y;
-    uint8_t screen_x;
-    uint8_t screen_y;
+    int16_t x;
+    int16_t y;
+    int16_t screen_x;
+    int16_t screen_y;
     thingz_screen_bitmap_t bmp;
     uint8_t show;
     uint8_t screen_show;
