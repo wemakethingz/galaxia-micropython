@@ -26,6 +26,8 @@
 
 #if MICROPY_THINGZ_SCREEN
 
+#define MICROPY_THINGZ_REFRESH_PERIOD 80
+
 static unsigned char splash_screen_palette[14][3] = {
 	{  0,  0,  0},
 	{ 66, 58, 16},
@@ -1345,12 +1347,13 @@ const char* TAG="SCREEN";
 #define THINGZ_SCREEN_FONT_WIDTH 6
 
 static BaseType_t refreshTask;
-static SemaphoreHandle_t controlLcd;
+SemaphoreHandle_t controlLcd;
 
 
 static void _thingz_screen_refresh(void *arg);
 static esp_timer_handle_t refreshTimer;
 static const esp_timer_create_args_t refreshTimerArgs = { .callback = &_thingz_screen_refresh, .name = "refresh_screen" };
+volatile bool refresh_in_progress = false;
 
 
 uint16_t _convertTo565(uint16_t r,uint16_t g,uint16_t b) {
@@ -1387,9 +1390,36 @@ void thingz_screen_show_splash(){
 
 static void _thingz_screen_refresh(void *arg){
 
+    // Skip if refresh already in progress to prevent concurrent access
+    if(refresh_in_progress){
+        ESP_LOGW("thingz_screen", "Refresh skipped - already in progress");
+        return;
+    }
+
+    // RAW mode uses scheduler - flag will be cleared by scheduled function
+    if(thingz_screen.current_mode == COMMON_THINGZ_SCREEN_MODE_RAW){
+
+        refresh_in_progress = true;
+        if(!thingz_screen_raw_refresh(&thingz_screen.raw)){
+            // Scheduling failed (queue full) - clear flag to allow retry
+            refresh_in_progress = false;
+            ESP_LOGW("thingz_screen", "RAW refresh scheduling failed - queue full");
+        }
+        // Don't clear flag here if scheduled - the scheduled function will do it
+        return;
+    }
+
+    // For non-RAW modes, set flag only after mode check
+    refresh_in_progress = true;
+
     // for(;;){
-        if(xSemaphoreTake(controlLcd, pdMS_TO_TICKS(10)) == pdFALSE)
+
+        // For other modes, take semaphore for direct SPI access
+        if(xSemaphoreTake(controlLcd, pdMS_TO_TICKS(10)) == pdFALSE){
+            ESP_LOGW("thingz_screen", "Refresh skipped - semaphore timeout");
+            refresh_in_progress = false;
             return;
+        }
         switch(thingz_screen.current_mode){
             case COMMON_THINGZ_SCREEN_MODE_REPL:
                 thingz_screen_repl_refresh(&thingz_screen.repl);
@@ -1400,11 +1430,10 @@ static void _thingz_screen_refresh(void *arg){
             case COMMON_THINGZ_SCREEN_MODE_PLOT:
 
             break;
-			case COMMON_THINGZ_SCREEN_MODE_RAW:
-				thingz_screen_raw_refresh(&thingz_screen.raw);
-			break;
         }
         xSemaphoreGive(controlLcd);
+
+    refresh_in_progress = false;
     // }
 }
 
@@ -1471,6 +1500,22 @@ void thingz_screen_init(void){
         thingz_screen.lineData[i] = 0;
     }
 
+    // Allocate second buffer for double buffering
+    thingz_screen.lineData2 = heap_caps_malloc(thingz_screen.lineDataSize*sizeof(uint16_t), MALLOC_CAP_DMA);
+    for(int i = 0; i < thingz_screen.lineDataSize; i++){
+        thingz_screen.lineData2[i] = 0;
+    }
+
+    // Initialize double buffering state
+    thingz_screen.activeBuffer = 0;
+    thingz_screen.pendingTrans = NULL;
+
+    // Allocate transaction pool for async DMA (2 structures, DMA-capable memory)
+    thingz_screen.transPool[0] = heap_caps_malloc(sizeof(spi_transaction_t), MALLOC_CAP_DMA);
+    thingz_screen.transPool[1] = heap_caps_malloc(sizeof(spi_transaction_t), MALLOC_CAP_DMA);
+    memset(thingz_screen.transPool[0], 0, sizeof(spi_transaction_t));
+    memset(thingz_screen.transPool[1], 0, sizeof(spi_transaction_t));
+
     thingz_screen_repl_init(&thingz_screen.repl, &thingz_screen);
     thingz_screen_plot_init(&thingz_screen.plot, &thingz_screen);
     thingz_screen_debug_init(&thingz_screen.debug, &thingz_screen);
@@ -1479,16 +1524,26 @@ void thingz_screen_init(void){
 
     thingz_screen.current_mode = 0;
 	esp_timer_create(&refreshTimerArgs, &refreshTimer);
-	esp_timer_start_periodic(refreshTimer, 40*1000);
+	esp_timer_start_periodic(refreshTimer, MICROPY_THINGZ_REFRESH_PERIOD*1000);
 
     // refreshTask = xTaskCreatePinnedToCore(_thingz_screen_refresh, "thingz_screen", 1024, 0, 1, NULL, 0);
 }
 
 void thingz_screen_print_screen_with_glyp_index(uint8_t* str, uint32_t len, uint32_t x, uint32_t y, uint16_t foreground){
+    // Safety check: verify str is not NULL
+    if (!str) {
+        return;
+    }
+
     uint8_t cpt = 0;
     while(cpt <  len){
-        
+
         uint8_t* glyph = font_get_glyph_from_index(str[cpt]);
+        if (!glyph) {
+            // Skip this character if glyph is NULL
+            cpt++;
+            continue;
+        }
         /*
             _________
               |000100
@@ -1582,7 +1637,13 @@ void thingz_screen_switch_mode(uint8_t mode){
     uint8_t oldMode = thingz_screen.current_mode;
     xSemaphoreTake(controlLcd, portMAX_DELAY);
     thingz_screen.current_mode = mode;
+
+    // Always clear refresh flag when switching modes to ensure clean state
+    // This prevents warnings when MicroPython program stops or starts
+    refresh_in_progress = false;
+
     xSemaphoreGive(controlLcd);
+
     switch(oldMode){
         case COMMON_THINGZ_SCREEN_MODE_REPL:
             thingz_screen_repl_exit();
@@ -1658,7 +1719,7 @@ void thingz_screen_unlock(){
 void thingz_screen_autorefresh(uint8_t autorefresh){
 	if(thingz_screen.autorefresh == 0 && autorefresh){
 		_thingz_screen_refresh(NULL);
-		esp_timer_start_periodic(refreshTimer, 40*1000);
+		esp_timer_start_periodic(refreshTimer, MICROPY_THINGZ_REFRESH_PERIOD*1000);
 		thingz_screen.autorefresh = 1;
 	}else{
 		esp_timer_stop(refreshTimer);

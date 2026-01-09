@@ -2,6 +2,14 @@
 
 cmake_minimum_required(VERSION 3.12)
 
+# Enable ccache if available to speed up compilation
+find_program(CCACHE_FOUND ccache)
+if(CCACHE_FOUND)
+    set(CMAKE_C_COMPILER_LAUNCHER ccache)
+    set(CMAKE_CXX_COMPILER_LAUNCHER ccache)
+    message(STATUS "ccache found and enabled")
+endif()
+
 # Retrieve IDF version
 include($ENV{IDF_PATH}/tools/cmake/version.cmake)
 set(IDF_VERSION "${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}.${IDF_VERSION_PATCH}")

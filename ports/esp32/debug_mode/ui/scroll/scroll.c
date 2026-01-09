@@ -123,7 +123,7 @@ void debug_mode_ui_scroll_print(debug_mode_ui_scroll_t* scroll){
     for(i = 0; i < (scroll->y_end - scroll->y_start)+1 ; i++){
         char str[3];
 
-        if(strlen(debug_mode_ui_text_scroll_get_text(scroll->text_scrolls+i)) <= 0){
+        if(!debug_mode_ui_text_scroll_get_text(scroll->text_scrolls+i) || strlen(debug_mode_ui_text_scroll_get_text(scroll->text_scrolls+i)) <= 0){
             continue;
         }
         

@@ -278,6 +278,7 @@ soft_reset:
     }
     gc_collect();
     _flush_ringbuffer();
+    
 
     for (;;) {
         if (pyexec_mode_kind == PYEXEC_MODE_RAW_REPL) {
@@ -343,6 +344,21 @@ soft_reset_exit:
     machine_deinit();
     #if MICROPY_PY_SOCKET_EVENTS
     socket_events_deinit();
+    #endif
+
+    // Stop screen refresh timer and clear objects before mp_deinit
+    #if MICROPY_THINGZ_SCREEN
+    extern thingz_screen_obj_t thingz_screen;
+    extern volatile bool refresh_in_progress;
+
+    // Wait for any in-progress refresh to complete
+    int timeout = 100;  // 100ms max wait
+    while(refresh_in_progress && timeout-- > 0) {
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+
+    // Now safe to clear the object list
+    thingz_screen_raw_clear_objects(&thingz_screen.raw);
     #endif
 
     mp_deinit();

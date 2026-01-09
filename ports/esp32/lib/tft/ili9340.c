@@ -168,10 +168,10 @@ bool spi_master_write_byte(spi_device_handle_t SPIHandle, const uint8_t* Data, s
 		}else{
 			SPITransaction.tx_buffer = Data;
 		}
-#if 1
+#if 0
 		ret = spi_device_transmit( SPIHandle, &SPITransaction );
 #endif
-#if 0
+#if 1
 		ret = spi_device_polling_transmit( SPIHandle, &SPITransaction );
 #endif
 		assert(ret==ESP_OK); 
@@ -242,7 +242,7 @@ bool spi_master_write_color(TFT_t * dev, uint16_t color, uint16_t size)
 // Add 202001
 bool spi_master_write_colors(TFT_t * dev, uint16_t * colors, uint16_t size)
 {
-	static uint8_t Byte[1024];
+	static DMA_ATTR uint8_t Byte[1024];
 	int index = 0;
 	for(int i=0;i<size;i++) {
 		Byte[index++] = (colors[i] >> 8) & 0xFF;
@@ -250,6 +250,41 @@ bool spi_master_write_colors(TFT_t * dev, uint16_t * colors, uint16_t size)
 	}
 	gpio_set_level( dev->_dc, SPI_Data_Mode );
 	return spi_master_write_byte( dev->_TFT_Handle, Byte, size*2);
+}
+
+// Async version for double buffering - buffer must be DMA capable and remain valid until transaction completes
+// trans_struct must be a pre-allocated spi_transaction_t structure that remains valid until the transaction completes
+bool spi_master_write_colors_async(TFT_t * dev, uint8_t * byte_buffer, uint16_t size, spi_transaction_t* trans_struct)
+{
+	esp_err_t ret;
+
+	if ( size > 0 && trans_struct ) {
+		memset( trans_struct, 0, sizeof( spi_transaction_t ) );
+		trans_struct->length = size * 8;  // size is already in bytes
+		trans_struct->tx_buffer = byte_buffer;
+
+		gpio_set_level( dev->_dc, SPI_Data_Mode );
+
+		// Queue the transaction asynchronously
+		ret = spi_device_queue_trans( dev->_TFT_Handle, trans_struct, portMAX_DELAY );
+		assert(ret==ESP_OK);
+	}
+
+	return true;
+}
+
+// Wait for a pending async transaction to complete
+bool spi_wait_for_pending_trans(TFT_t * dev, spi_transaction_t* trans)
+{
+	if(trans == NULL) {
+		return true;
+	}
+
+	spi_transaction_t *rtrans;
+	esp_err_t ret = spi_device_get_trans_result( dev->_TFT_Handle, &rtrans, portMAX_DELAY );
+	assert(ret==ESP_OK);
+
+	return true;
 }
 
 

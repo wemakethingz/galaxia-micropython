@@ -5,6 +5,7 @@
 #include "py/obj.h"
 #include "thingz_screen_repl.h"
 #include "thingz_screen.h"
+#include "esp_log.h"
 #include "common-thingz/thingz/thingz.h"
 #include "common-thingz/thingz_display/Raw/thingz_display_raw_image.h"
 #include "common-thingz/thingz_display/Raw/thingz_display_raw_rectangle.h"
@@ -181,7 +182,7 @@ uint32_t _thingz_get_pixel(thingz_screen_bitmap_t *bitmap, int16_t x, int16_t y)
 }
 
 uint32_t _thingz_get_pixels(thingz_screen_bitmap_t *bitmap,
-    int16_t x, int16_t y, int16_t x2, int16_t y2, uint16_t* pixels) {
+    int16_t x, int16_t y, int16_t x2, int16_t y2, uint16_t* pixels, uint8_t* line_buffer) {
     if (x < 0 || x >= bitmap->width || y < 0 || y >= bitmap->height
     ||  x2 < 0 || x2 >= bitmap->width || y2 < 0 || y2 >= bitmap->height) {
         return 0;
@@ -191,15 +192,28 @@ uint32_t _thingz_get_pixels(thingz_screen_bitmap_t *bitmap,
     uint8_t pixels_per_byte = 8 / bitmap->bits_per_pixel;
     uint8_t width = (x2 - x) + 1;
 
+    // Use pre-allocated buffer passed from caller to avoid malloc/free per line
+    uint16_t line_size = width * bytes_per_pixel;
+
     for(uint8_t i = 0; i <= (y2 - y); i++){
         uint32_t location = bitmap->data_offset + (bitmap->height - (y + i) - 1) * bitmap->stride;
         location += (pixels_per_byte == 0) ? x * bytes_per_pixel : x / pixels_per_byte;
 
+        // Seek once per line instead of once per pixel
         f_lseek(&bitmap->file->fp, location);
-        for(uint8_t j = 0; j <= (x2 - x); j++){
-            UINT bytes_read;
-            uint32_t pixel_data = 0;
-            if (f_read(&bitmap->file->fp, &pixel_data, bytes_per_pixel, &bytes_read) == FR_OK) {
+
+        // Read entire line in one operation
+        UINT bytes_read;
+        if (f_read(&bitmap->file->fp, line_buffer, line_size, &bytes_read) == FR_OK && bytes_read == line_size) {
+            // Process all pixels from the buffer
+            for(uint8_t j = 0; j <= (x2 - x); j++){
+                uint32_t pixel_data = 0;
+
+                // Extract pixel data from buffer
+                for(uint8_t b = 0; b < bytes_per_pixel; b++){
+                    pixel_data |= ((uint32_t)line_buffer[j * bytes_per_pixel + b]) << (b * 8);
+                }
+
                 uint32_t pixel = _thingz_decode_pixel(pixel_data, bytes_per_pixel, pixels_per_byte, bitmap->bits_per_pixel, x + j, bitmap);
 
                 if(bitmap->palette != NULL){
@@ -301,30 +315,62 @@ void thingz_screen_raw_exit(thingz_screen_raw_t *raw){
 
     while(o != NULL){
         thingz_screen_raw_show_obj_t* next = o->next;
-        thingz_display_raw_img_obj_t* img = o->show_obj;
-        // free(o);
-        img->screen_show = 0;
+        if (o->show_obj) {
+            // Use correct type to access screen_show - offset differs between types!
+            if(mp_obj_is_type(o->show_obj, &mp_thingz_display_raw_rectangle_type)){
+                thingz_display_raw_rectangle_obj_t* rect = o->show_obj;
+                rect->screen_show = 0;
+            }else if(mp_obj_is_type(o->show_obj, &mp_thingz_display_raw_img_type)){
+                thingz_display_raw_img_obj_t* img = o->show_obj;
+                img->screen_show = 0;
+            }else if(mp_obj_is_type(o->show_obj, &mp_thingz_display_raw_text_type)){
+                thingz_display_raw_text_obj_t* text = o->show_obj;
+                text->screen_show = 0;
+            }
+        }
         o = next;
     }
+    // Note: Don't clear raw->head here - objects should persist across mode changes
+}
+
+void thingz_screen_raw_clear_objects(thingz_screen_raw_t *raw){
+    // Clear all objects from the list when program terminates
+    // This prevents crashes from accessing freed MicroPython objects
+    raw->head = NULL;
 }
 
 static uint8_t _thingz_screen_raw_refresh_image(thingz_screen_raw_t *raw, thingz_display_raw_img_obj_t* img, uint8_t force_refresh){
     uint8_t printed = 0;
     if(img->show){
         if(img->screen_show == 0){
-            // First time showing - just draw it
-            thingz_screen_raw_print_bmp(&(thingz_screen.raw), img->x, img->y, img->path, img->white_replacement_color, 1);
+            // First time showing - just draw it and store bitmap metadata (width/height)
+            img->bmp = thingz_screen_raw_print_bmp(&(thingz_screen.raw), img->x, img->y, img->path, img->white_replacement_color, 1);
             printed = 1;
         }else{
-            uint8_t need_refresh = force_refresh;
+            // Check if image itself has changed (position or color)
+            uint8_t image_changed = (img->screen_x != img->x) ||
+                                   (img->screen_y != img->y) ||
+                                   (img->screen_white_replacement_color != img->white_replacement_color);
 
-            // Clear parts no longer covered when position changes
+            uint8_t need_refresh = force_refresh || image_changed;
+
             // Detect if object is COMPLETELY off-screen (not visible at all)
             uint8_t x_offscreen = (img->x >= MICROPY_THINGZ_SCREEN_WIDTH || img->x + (int16_t)img->bmp.width <= 0);
             uint8_t y_offscreen = (img->y >= MICROPY_THINGZ_SCREEN_HEIGHT || img->y + (int16_t)img->bmp.height <= 0);
             uint8_t screen_x_offscreen = (img->screen_x >= MICROPY_THINGZ_SCREEN_WIDTH || img->screen_x + (int16_t)img->bmp.width <= 0);
             uint8_t screen_y_offscreen = (img->screen_y >= MICROPY_THINGZ_SCREEN_HEIGHT || img->screen_y + (int16_t)img->bmp.height <= 0);
 
+            // STEP 1: Draw new image first (before clearing) to reduce flicker
+            // Only reload image from SPIFFS if the image itself has changed
+            // Don't reload just because another object overlaps (force_refresh)
+            // This avoids slow SPIFFS reads when other objects change
+            if(image_changed && !x_offscreen && !y_offscreen){
+                // Draw at new position (overlapping parts overwrite old pixels, reducing flicker)
+                img->bmp = thingz_screen_raw_print_bmp(&(thingz_screen.raw), img->x, img->y, img->path, img->white_replacement_color, 1);
+                printed = 1;
+            }
+
+            // STEP 2: Clear parts no longer covered (after drawing to minimize black flash)
             // If old or new position is completely off-screen, clear old position entirely
             if(screen_x_offscreen || screen_y_offscreen || x_offscreen || y_offscreen){
                 if(!screen_x_offscreen && !screen_y_offscreen){
@@ -344,7 +390,7 @@ static uint8_t _thingz_screen_raw_refresh_image(thingz_screen_raw_t *raw, thingz
                     need_refresh = 1;
                     // Clear horizontal difference
                     if(img->x > img->screen_x){
-                        // Moved right - clear left strip
+                        // Moved right - clear left strip (now AFTER drawing)
                         int16_t clear_start = (img->screen_x < 0) ? 0 : img->screen_x;
                         int16_t clear_end = (img->x < 0) ? 0 : ((img->x >= MICROPY_THINGZ_SCREEN_WIDTH) ? MICROPY_THINGZ_SCREEN_WIDTH - 1 : img->x - 1);
                         int16_t strip_y_start = (img->screen_y < 0) ? 0 : img->screen_y;
@@ -354,7 +400,7 @@ static uint8_t _thingz_screen_raw_refresh_image(thingz_screen_raw_t *raw, thingz
                         }
                     }
                     if(img->x < img->screen_x){
-                        // Moved left - clear right strip
+                        // Moved left - clear right strip (now AFTER drawing)
                         int16_t clear_start = img->x + img->bmp.width;
                         int16_t clear_end = img->screen_x + img->bmp.width - 1;
                         // Clamp to screen bounds
@@ -372,7 +418,7 @@ static uint8_t _thingz_screen_raw_refresh_image(thingz_screen_raw_t *raw, thingz
                     need_refresh = 1;
                     // Clear vertical difference
                     if(img->y > img->screen_y){
-                        // Moved down - clear top strip
+                        // Moved down - clear top strip (now AFTER drawing)
                         int16_t clear_start = (img->screen_y < 0) ? 0 : img->screen_y;
                         int16_t clear_end = (img->y < 0) ? 0 : ((img->y >= MICROPY_THINGZ_SCREEN_HEIGHT) ? MICROPY_THINGZ_SCREEN_HEIGHT - 1 : img->y - 1);
                         int16_t strip_x_start = (img->screen_x < 0) ? 0 : img->screen_x;
@@ -382,7 +428,7 @@ static uint8_t _thingz_screen_raw_refresh_image(thingz_screen_raw_t *raw, thingz
                         }
                     }
                     if(img->y < img->screen_y){
-                        // Moved up - clear bottom strip
+                        // Moved up - clear bottom strip (now AFTER drawing)
                         int16_t clear_start = img->y + img->bmp.height;
                         int16_t clear_end = img->screen_y + img->bmp.height - 1;
                         // Clamp to screen bounds
@@ -396,15 +442,12 @@ static uint8_t _thingz_screen_raw_refresh_image(thingz_screen_raw_t *raw, thingz
                     }
                 }
             }
-
-            if(need_refresh && !x_offscreen && !y_offscreen){
-                // Draw at new position (overlapping parts are overwritten) - only if at least partially visible
-                thingz_screen_raw_print_bmp(&(thingz_screen.raw), img->x, img->y, img->path, img->white_replacement_color, 1);
-                printed = 1;
-            }
+            // TODO: If force_refresh but !image_changed, should redraw from cached bitmap
+            // For now, we accept that overlapping objects won't redraw this image
         }
         img->screen_x = img->x;
         img->screen_y = img->y;
+        img->screen_white_replacement_color = img->white_replacement_color;
         img->screen_show = 1;
     }else{
         if(img->screen_show){
@@ -531,6 +574,7 @@ static uint8_t _thingz_screen_raw_refresh_rectangle(thingz_screen_raw_t *raw, th
 
 static uint8_t _thingz_screen_raw_refresh_text(thingz_screen_raw_t *raw, thingz_display_raw_text_obj_t* text, uint8_t force_refresh){
     uint8_t printed = 0;
+    if (!raw || !raw->screen) return 0;  // Safety check
     uint16_t len = strlen(text->text);
     uint8_t height = raw->screen->params.font_height;
     uint8_t width = raw->screen->params.font_width * len;
@@ -732,15 +776,39 @@ static uint8_t _thingz_screen_raw_is_obj_under(thingz_screen_raw_show_obj_t* cur
 
 
 static mp_obj_t mp_thingz_screen_raw_refresh(void* r){
-    //When clean_vm is called we can no longer call m_malloc
-    //Some debug interface may not work properly (ie accelormeter.get need to allocate a list)
-    //So we exit
+
     thingz_screen_raw_t* raw = r;
-    if (gc_is_locked() || raw->screen->current_mode != COMMON_THINGZ_SCREEN_MODE_RAW) {
+    // Check for NULL pointers before dereferencing
+    if (!raw || !raw->screen) {
+        refresh_in_progress = false;
+        return mp_const_none;
+    }
+    if (gc_is_locked()) {
+        raw->head = NULL;
+        refresh_in_progress = false;
+        return mp_const_none;
+    }
+    if (raw->screen->current_mode != COMMON_THINGZ_SCREEN_MODE_RAW) {
+        // Mode changed - clear flag to allow future refreshes
+        refresh_in_progress = false;
+        return mp_const_none;
+    }
+    // Try to take semaphore with SHORT timeout (2ms) to avoid long blocking in Python context
+    // Balance between preventing corruption and reducing stuttering
+    if(xSemaphoreTake(controlLcd, pdMS_TO_TICKS(2)) == pdFALSE){
+        // Clear flag to allow retry on next timer tick
+        refresh_in_progress = false;
         return mp_const_none;
     }
     thingz_screen_raw_show_obj_t* obj = raw->head;
     while(obj != NULL){
+        ESP_LOGW("RAW", "start");
+        // Skip if show_obj is NULL or invalid to prevent crashes on freed objects
+        if (!obj->show_obj) {
+            obj = obj->next;
+            continue;
+        }
+
         obj->was_updated = 0;
         uint8_t force_refresh = _thingz_screen_raw_is_obj_on_top(obj);
         if(!force_refresh){
@@ -748,20 +816,26 @@ static mp_obj_t mp_thingz_screen_raw_refresh(void* r){
         }
         if(mp_obj_is_type(obj->show_obj, &mp_thingz_display_raw_rectangle_type)){
             obj->was_updated = _thingz_screen_raw_refresh_rectangle(raw, obj->show_obj, force_refresh);
+            ESP_LOGW("RAW", "rectangle %d", obj->was_updated);
         }else if(mp_obj_is_type(obj->show_obj, &mp_thingz_display_raw_img_type)){
             obj->was_updated = _thingz_screen_raw_refresh_image(raw, obj->show_obj, force_refresh);
+            ESP_LOGW("RAW", "image %d", obj->was_updated);
         }else if(mp_obj_is_type(obj->show_obj, &mp_thingz_display_raw_text_type)){
             obj->was_updated = _thingz_screen_raw_refresh_text(raw, obj->show_obj, force_refresh);
+            ESP_LOGW("RAW", "text %d", obj->was_updated);
         }
         obj = obj->next;
     }
+    ESP_LOGW("RAW", "done");
+    xSemaphoreGive(controlLcd);  // Release semaphore
+    refresh_in_progress = false;  // Clear flag after work is done
 
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_screen_raw_refresh_obj, mp_thingz_screen_raw_refresh);
 
 
-void thingz_screen_raw_refresh(thingz_screen_raw_t *raw){
+bool thingz_screen_raw_refresh(thingz_screen_raw_t *raw){
     // thingz_screen_raw_transfer_t transfer;
     // if( xQueueReceive( raw->transfer_queue,&( transfer ),0) == pdPASS ){
     //     if(transfer.action == THINGZ_SCREEN_RAW_TRANSFER_ACTION_ADD){
@@ -773,17 +847,19 @@ void thingz_screen_raw_refresh(thingz_screen_raw_t *raw){
     // if (raw->screen->current_mode != COMMON_THINGZ_SCREEN_MODE_RAW) {
     //     return;
     // }
-    mp_sched_schedule((mp_obj_t)&mp_thingz_screen_raw_refresh_obj, raw);
+    return mp_sched_schedule((mp_obj_t)&mp_thingz_screen_raw_refresh_obj, raw);
 }
 
 mp_uint_t thingz_screen_raw_write(thingz_screen_raw_t *raw, int16_t x, int16_t y, const void *buf, mp_uint_t size, uint32_t color){
     // Clamp coordinates for partial visibility
+    if (!raw || !raw->screen) return size;  // Safety check
     if(x < 0 || x >= MICROPY_THINGZ_SCREEN_WIDTH || y < 0 || y >= MICROPY_THINGZ_SCREEN_HEIGHT) return size;
     thingz_screen_print_screen(buf, size, x, MICROPY_THINGZ_SCREEN_HEIGHT-1-y-raw->screen->params.font_height+1, RGB888_TO_RGB565(color), 1);
     return size;
 }
 
 thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int16_t x, int16_t y, const char *file, uint32_t white_replacement_color, uint8_t show){
+    ESP_LOGW("BMP", "A: start load %s", file);
     thingz_screen_bitmap_t bitmap;
     bitmap.shown = 0;
     mp_obj_t args[] = {
@@ -791,7 +867,9 @@ thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int
     mp_obj_new_str("rb", 1),
     };
     uint16_t bmp_header[69];
+    ESP_LOGW("BMP", "B: before vfs_open");
     pyb_file_obj_t* f = mp_vfs_open(2, args, &mp_const_empty_map);
+    ESP_LOGW("BMP", "C: after vfs_open");
     bitmap.file = f;
     
     f_rewind(&f->fp);
@@ -923,7 +1001,14 @@ thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int
             return bitmap;
         }
 
+        ESP_LOGW("BMP", "D: before malloc colors");
         uint16_t *colors = (uint16_t*)m_malloc(sizeof(uint16_t) * (rotation ? bitmap.height : bitmap.width));
+        ESP_LOGW("BMP", "E: after malloc colors, before malloc line_buffer");
+        // Allocate line buffer ONCE for all rows to avoid repeated malloc/free (reuse bytes_per_pixel from above)
+        uint16_t max_line_size = (rotation ? bitmap.height : bitmap.width) * bytes_per_pixel;
+        uint8_t *line_buffer = (uint8_t*)m_malloc(max_line_size);
+        ESP_LOGW("BMP", "F: after malloc line_buffer, before loop");
+
         uint8_t _x = 0, _x2, _y, _y2;
         for (int row=row_start; row< row_end; row++) { // Draw only visible rows
 
@@ -931,7 +1016,7 @@ thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int
             _x2 = rotation ? row : bitmap.width-1;
             _y = rotation ? y_offset : row;  // Start from y_offset if clipped at top
             _y2 = rotation ? (y_offset + visible_height - 1) : row;  // End at visible portion
-            _thingz_get_pixels(&bitmap, _x, _y, _x2, _y2, colors);
+            _thingz_get_pixels(&bitmap, _x, _y, _x2, _y2, colors, line_buffer);
 
             if(rotation){
                 uint16_t color;
@@ -947,20 +1032,70 @@ thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int
             int16_t draw_x_coord = MICROPY_THINGZ_SCREEN_HEIGHT - visible_height - visible_y_start;
             int16_t draw_y_coord = x + row;
 
-            // Draw visible portion only
+            // Draw visible portion only with double buffering
             if(draw_y_coord >= 0 && draw_y_coord < MICROPY_THINGZ_SCREEN_WIDTH) {
-                lcdDrawMultiPixels(&(thingz_screen.dev), draw_x_coord, draw_y_coord, visible_height, colors);
+                // Wait for previous async transaction to complete
+                if(thingz_screen.pendingTrans) {
+                    spi_wait_for_pending_trans(&(thingz_screen.dev), (spi_transaction_t*)thingz_screen.pendingTrans);
+                    thingz_screen.pendingTrans = NULL;
+                }
+
+                // Select buffer (alternate between lineData and lineData2)
+                uint8_t* byte_buffer = (uint8_t*)(thingz_screen.activeBuffer == 0 ? thingz_screen.lineData : thingz_screen.lineData2);
+
+                // Select transaction structure from pool (alternate with buffer)
+                spi_transaction_t* trans_struct = (spi_transaction_t*)thingz_screen.transPool[thingz_screen.activeBuffer];
+
+                // Convert uint16_t colors to uint8_t bytes (big endian for SPI)
+                int byte_index = 0;
+                for(int i = 0; i < visible_height; i++) {
+                    byte_buffer[byte_index++] = (colors[i] >> 8) & 0xFF;
+                    byte_buffer[byte_index++] = colors[i] & 0xFF;
+                }
+
+                // Setup LCD window
+                uint16_t _x1 = draw_x_coord + thingz_screen.dev._offsetx;
+                uint16_t _x2 = _x1 + visible_height;
+                uint16_t _y1 = draw_y_coord + thingz_screen.dev._offsety;
+                uint16_t _y2 = _y1;
+
+                if (thingz_screen.dev._model == 0x7735) {
+                    spi_master_write_comm_byte(&(thingz_screen.dev), 0x2A);
+                    spi_master_write_data_word(&(thingz_screen.dev), _x1);
+                    spi_master_write_data_word(&(thingz_screen.dev), _x2);
+                    spi_master_write_comm_byte(&(thingz_screen.dev), 0x2B);
+                    spi_master_write_data_word(&(thingz_screen.dev), _y1);
+                    spi_master_write_data_word(&(thingz_screen.dev), _y2);
+                    spi_master_write_comm_byte(&(thingz_screen.dev), 0x2C);
+
+                    // Send async with DMA using dedicated transaction structure from pool
+                    spi_master_write_colors_async(&(thingz_screen.dev), byte_buffer, visible_height * 2, trans_struct);
+                    thingz_screen.pendingTrans = trans_struct;
+
+                    // Toggle buffer for next iteration
+                    thingz_screen.activeBuffer = 1 - thingz_screen.activeBuffer;
+                }
+
                 bitmap.shown = 1;
             }
         } // end for row
 
+        // Wait for final async transaction to complete
+        if(thingz_screen.pendingTrans) {
+            spi_wait_for_pending_trans(&(thingz_screen.dev), (spi_transaction_t*)thingz_screen.pendingTrans);
+            thingz_screen.pendingTrans = NULL;
+        }
+        ESP_LOGW("BMP", "G: after loop, before free");
+
+        m_free(line_buffer);
         m_free(colors);
     }
 
+    ESP_LOGW("BMP", "H: before close file");
     f_close(&f->fp);
     if(bitmap.palette)
         m_free(bitmap.palette);
-    
+    ESP_LOGW("BMP", "I: done load");
 
     return bitmap;
 // //     // read bmp header

@@ -52,6 +52,10 @@ void thingz_screen_debug_exit(){
 // }
 
 void thingz_screen_debug_refresh(thingz_screen_debug_t *debug){
+    // Safety check: verify debug and screen pointers are valid
+    if (!debug || !debug->screen) {
+        return;
+    }
 
     for(int i = 0; i < debug->dataLines; i++){
         thingz_screen_print_screen_with_glyp_index(debug->data[i], debug->dataColumns, 0, ((debug->dataLines-1)*debug->screen->params.font_height)-(i*debug->screen->params.font_height), 0xffff); //leave 1px for the header line
@@ -59,6 +63,11 @@ void thingz_screen_debug_refresh(thingz_screen_debug_t *debug){
 }
 
 void thingz_screen_debug_set_str(thingz_screen_debug_t *debug, uint8_t* str, uint8_t x, uint8_t y){
+    // Safety check: verify debug pointer is valid
+    if (!debug || !str) {
+        return;
+    }
+
     uint8_t len = strlen((char*)str);
     for(uint8_t i = x; i-x < len && i < debug->dataColumns; i++){
         debug->data[y][i] = font_get_glyph_index(str[i-x]);

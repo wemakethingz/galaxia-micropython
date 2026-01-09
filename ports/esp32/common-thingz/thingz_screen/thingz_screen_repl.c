@@ -50,6 +50,11 @@ static void _thingz_screen_repl_scroll(thingz_screen_repl_t *repl){
 }
 
 void thingz_screen_repl_refresh(thingz_screen_repl_t *repl){
+    // Safety check: verify repl and screen pointers are valid
+    if (!repl || !repl->screen) {
+        return;
+    }
+
     // uint8_t str[repl->dataColumns*5];
     // uint8_t index = 0;
     for(int i = 0; i < repl->dataLines; i++){

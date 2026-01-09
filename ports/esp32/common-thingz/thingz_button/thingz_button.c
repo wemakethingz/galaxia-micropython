@@ -63,6 +63,10 @@ void thingz_button_init(thingz_button_obj_t* button, uint8_t pin){
     button->pin = pin;
     button->pressed_callback = NULL;
     button->base.type = &thingz_button_type;
+    button->debounce_timer = NULL;
+    button->was_pressed = false;
+    button->presses_count = 0;
+    button->lastInterrupt = 0;
 
     gpio_config_t io_conf;
 

@@ -57,6 +57,8 @@ bool spi_master_write_data_word(TFT_t * dev, uint16_t data);
 bool spi_master_write_addr(TFT_t * dev, uint16_t addr1, uint16_t addr2);
 bool spi_master_write_color(TFT_t * dev, uint16_t color, uint16_t size);
 bool spi_master_write_colors(TFT_t * dev, uint16_t * colors, uint16_t size);
+bool spi_master_write_colors_async(TFT_t * dev, uint8_t * byte_buffer, uint16_t size, spi_transaction_t* trans_struct);
+bool spi_wait_for_pending_trans(TFT_t * dev, spi_transaction_t* trans);
 
 void delayMS(int ms);
 void lcdWriteRegisterWord(TFT_t * dev, uint16_t addr, uint16_t data);

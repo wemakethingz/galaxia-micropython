@@ -5,6 +5,8 @@
 #include "py/stream.h"
 
 #include "lib/tft/ili9340.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #include "thingz_screen_repl.h"
 #include "thingz_screen_plot.h"
@@ -31,11 +33,17 @@ typedef struct thingz_screen_obj{
 
 	uint16_t *lineData;
     uint16_t lineDataSize;
+	uint16_t *lineData2;     // Second buffer for double buffering
+	uint8_t activeBuffer;    // 0 or 1 - which buffer is currently being prepared
+	void* pendingTrans;      // Pending DMA transaction (spi_transaction_t*)
+	void* transPool[2];      // Pool of 2 spi_transaction_t structures for async operations
 
 }  thingz_screen_obj_t;
 
 extern const mp_obj_type_t thingz_screen_type;
 extern thingz_screen_obj_t thingz_screen;
+extern SemaphoreHandle_t controlLcd;
+extern volatile bool refresh_in_progress;
 
 #define COMMON_THINGZ_SCREEN_MODE_REPL 0
 #define COMMON_THINGZ_SCREEN_MODE_PLOT 1
