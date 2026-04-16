@@ -41,8 +41,8 @@ mp_obj_t mp_thingz_display_raw_text_make_new(const mp_obj_type_t *type, size_t n
     self->color = color;
     self->show = 0;
     self->screen_show = 0;
-    self->screen_height = 0;
-    self->screen_width = 0;
+    self->screen_height = thingz_screen.params.font_height;
+    self->screen_width = thingz_screen.params.font_height*strlen(t);
     self->has_changed = 0;
     self->text = t;
     thingz_screen_raw_add_show_obj(&(thingz_screen.raw), self);
@@ -108,6 +108,7 @@ MP_DEFINE_CONST_FUN_OBJ_2(mp_thingz_display_raw_text_y_obj, mp_thingz_display_ra
 static mp_obj_t mp_thingz_display_raw_text_set_text(mp_obj_t self_in, mp_obj_t text) {
     thingz_display_raw_text_obj_t *self = MP_OBJ_TO_PTR(self_in);
     self->text = mp_obj_str_get_str(text);
+    self->screen_width = thingz_screen.params.font_height*strlen(self->text);
     self->has_changed = 1;
     return mp_const_none;
 }

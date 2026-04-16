@@ -17,6 +17,13 @@
 #include "py/unicode.h"
 #include "py/misc.h"
 #include "py/gc.h"
+#include "py/mpthread.h"
+#include "py/runtime.h"
+#include "py/mpstate.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
 
 #include "lib/tft/ili9340.h"
 #include "lib/tft/fontx.h"
@@ -836,18 +843,10 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_thingz_screen_raw_refresh_obj, mp_thingz_screen_raw
 
 
 bool thingz_screen_raw_refresh(thingz_screen_raw_t *raw){
-    // thingz_screen_raw_transfer_t transfer;
-    // if( xQueueReceive( raw->transfer_queue,&( transfer ),0) == pdPASS ){
-    //     if(transfer.action == THINGZ_SCREEN_RAW_TRANSFER_ACTION_ADD){
-    //         _thingz_screen_raw_add_show_obj_to_list(raw, transfer.img);
-    //     }else{
-    //         _thingz_screen_raw_remove_show_obj_from_list(raw, transfer.img);
-    //     }
-    // }
-    // if (raw->screen->current_mode != COMMON_THINGZ_SCREEN_MODE_RAW) {
-    //     return;
-    // }
-    return mp_sched_schedule((mp_obj_t)&mp_thingz_screen_raw_refresh_obj, raw);
+    // Called from the dedicated Python refresh task in thingz_screen.c
+    // which already has the GIL acquired
+    mp_call_function_1((mp_obj_t)&mp_thingz_screen_raw_refresh_obj, MP_OBJ_FROM_PTR(raw));
+    return true;
 }
 
 mp_uint_t thingz_screen_raw_write(thingz_screen_raw_t *raw, int16_t x, int16_t y, const void *buf, mp_uint_t size, uint32_t color){
@@ -863,8 +862,8 @@ thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int
     thingz_screen_bitmap_t bitmap;
     bitmap.shown = 0;
     mp_obj_t args[] = {
-    mp_obj_new_str(file, strlen(file)),
-    mp_obj_new_str("rb", 1),
+        mp_obj_new_str(file, strlen(file)),
+        mp_obj_new_str("rb", 2),
     };
     uint16_t bmp_header[69];
     ESP_LOGW("BMP", "B: before vfs_open");

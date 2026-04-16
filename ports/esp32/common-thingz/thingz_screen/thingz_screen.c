@@ -19,6 +19,12 @@
 #include "mpconfigboard.h"
 
 #include "py/unicode.h"
+#include "py/mpthread.h"
+#include "py/runtime.h"
+#include "py/mpstate.h"
+#include "py/stackctrl.h"
+
+#include "freertos/task.h"
 
 #include "debug_mode/debug_mode.h"
 
@@ -1355,6 +1361,33 @@ static esp_timer_handle_t refreshTimer;
 static const esp_timer_create_args_t refreshTimerArgs = { .callback = &_thingz_screen_refresh, .name = "refresh_screen" };
 volatile bool refresh_in_progress = false;
 
+// Execute RAW refresh in MicroPython context
+// This can be called from timer callback (non-MicroPython thread)
+static void _thingz_screen_raw_refresh_in_mp_context(void) {
+    // Save original thread state (may be NULL if called from non-MP thread)
+    mp_state_thread_t *ts_orig = mp_thread_get_state();
+
+    mp_state_thread_t ts;
+    if (ts_orig == NULL) {
+        // Initialize temporary thread state and acquire GIL
+        mp_thread_init_state(&ts, 2048, NULL, NULL);
+        MP_THREAD_GIL_ENTER();
+    }
+
+    // Lock scheduler and execute refresh
+    mp_sched_lock();
+    if (thingz_screen.current_mode == COMMON_THINGZ_SCREEN_MODE_RAW) {
+        thingz_screen_raw_refresh(&thingz_screen.raw);
+    }
+    mp_sched_unlock();
+
+    if (ts_orig == NULL) {
+        // Release GIL and restore original state
+        MP_THREAD_GIL_EXIT();
+        mp_thread_set_state(ts_orig);
+    }
+}
+
 
 uint16_t _convertTo565(uint16_t r,uint16_t g,uint16_t b) {
 	return (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
@@ -1396,16 +1429,9 @@ static void _thingz_screen_refresh(void *arg){
         return;
     }
 
-    // RAW mode uses scheduler - flag will be cleared by scheduled function
+    // RAW mode - execute refresh in MicroPython context
     if(thingz_screen.current_mode == COMMON_THINGZ_SCREEN_MODE_RAW){
-
-        refresh_in_progress = true;
-        if(!thingz_screen_raw_refresh(&thingz_screen.raw)){
-            // Scheduling failed (queue full) - clear flag to allow retry
-            refresh_in_progress = false;
-            ESP_LOGW("thingz_screen", "RAW refresh scheduling failed - queue full");
-        }
-        // Don't clear flag here if scheduled - the scheduled function will do it
+        _thingz_screen_raw_refresh_in_mp_context();
         return;
     }
 
@@ -1521,12 +1547,9 @@ void thingz_screen_init(void){
     thingz_screen_debug_init(&thingz_screen.debug, &thingz_screen);
 	thingz_screen_raw_init(&thingz_screen.raw, &thingz_screen);
 
-
     thingz_screen.current_mode = 0;
 	esp_timer_create(&refreshTimerArgs, &refreshTimer);
 	esp_timer_start_periodic(refreshTimer, MICROPY_THINGZ_REFRESH_PERIOD*1000);
-
-    // refreshTask = xTaskCreatePinnedToCore(_thingz_screen_refresh, "thingz_screen", 1024, 0, 1, NULL, 0);
 }
 
 void thingz_screen_print_screen_with_glyp_index(uint8_t* str, uint32_t len, uint32_t x, uint32_t y, uint16_t foreground){
@@ -1673,7 +1696,7 @@ void thingz_screen_switch_mode(uint8_t mode){
 			thingz_screen_raw_enter(&thingz_screen.raw);
 		break;
     }
-    
+
 }
 
 uint8_t thingz_screen_get_mode(){

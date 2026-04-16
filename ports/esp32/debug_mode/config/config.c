@@ -18,6 +18,9 @@
 #include "shared/runtime/pyexec.h"
 
 #include "py/objstr.h"
+#include "py/nlr.h"
+#include "extmod/vfs.h"
+#include "extmod/vfs_fat.h"
 
 #define DEBUG_MODE_CONFIG_MIN_SELECTED_ROW 1
 #define DEBUG_MODE_CONFIG_MAX_SELECTED_ROW 8
@@ -31,7 +34,8 @@
 
 static int8_t selected_row;
 
-static char *files_name;
+static char *files_name;        // UTF-8 names for display
+static char *files_name_raw;    // Original names for file operations
 static debug_mode_ui_scroll_t scroll_files;
 static debug_mode_ui_selector_t selector;
 
@@ -153,8 +157,10 @@ static void _config_handle_event(uint8_t event)
     case DEBUG_MODE_CONFIG_EVENT_VALIDATE:
         if (selector.y >= DEBUG_MODE_CONFIG_SCROLL_FILE_START && selector.y <= DEBUG_MODE_CONFIG_SCROLL_FILE_END)
         {
-            char *name = debug_mode_ui_scroll_get_current_item(&scroll_files);
-            if (name)
+            // Get raw filename (not UTF-8) for file operations
+            int slot = (scroll_files.active_row - scroll_files.y_start) * 50;
+            char *name = files_name_raw + slot;
+            if (name && name[0] != '\0')
             {
                 thingz_set_python_file_to_exec((const char *)name);
                 if(!pyexec_repl_active)
@@ -1089,59 +1095,85 @@ static void convert_to_utf8(char *file, char *destination, size_t dest_len)
 
 static int32_t _list_files(char *path, int32_t index, int32_t max, int32_t counter, uint8_t y)
 {
-    // mp_printf(MP_PYTHON_PRINTER, "CALLING %s\n", path);
-    mp_obj_t args = {mp_obj_new_str(path, strlen(path))};
-    nlr_buf_t nlr;
-    
-        mp_obj_list_t* list = mp_vfs_listdir(1, &args);
-        // mp_printf(MP_PYTHON_PRINTER, "list len %d\n", list->len);
-        size_t i;
-        int len = strlen(path);
-        for(i = 0; i < list->len; i++){
-            // mp_printf(MP_PYTHON_PRINTER, "i %d\n", i);
-            GET_STR_DATA_LEN(list->items[i], s, l);
-            char p[128];
-            snprintf(p, 50, "%s/%s", path, s);
-            
-            if(strcmp((char*)s, "lib") == 0)
-                continue;
-            // mp_printf(MP_PYTHON_PRINTER, "PATH %s\n", path);
-            mp_obj_tuple_t* stat = mp_vfs_stat(mp_obj_new_str(p, strlen(p)));
-            if(mp_obj_get_int(stat->items[0]) & 0x4000){
-                //Directory
-                char utf8[50];
-                convert_to_utf8(s, utf8, 50);
-                int oldLen = len;
-                snprintf(&path[len], 128, "/%s", utf8);
-                // mp_printf(MP_PYTHON_PRINTER, "DIR %s\n", path);
-                counter = _list_files(path, index, max, counter, y);
-                path[oldLen] = 0;
-                // mp_printf(MP_PYTHON_PRINTER, "ret %d i %d\n", counter, i);
-            }else{
-                // mp_printf(MP_PYTHON_PRINTER, "FILE %s\n", s);
-                if (strcmp((char*)s, "boot.py") == 0 || strncmp((char*)(s + strlen((char*)s) - 3), ".py", 3) != 0)
-                    continue;
-                if (counter - index >= max)
-                    return 0xffff;
-                if (counter >= index)
-                {
-                    if (path[0] == '.' && strlen(path) == 1)
-                    {
-                        convert_to_utf8(s, files_name + (counter - index) * 50, 49);
-                    }
-                    else
-                    {
-                        char *str = (char *)malloc(260 * sizeof(char));
-                        sprintf(str, "%s/%s", path[0] == '.' ? path + 2 : path, s);
-                        convert_to_utf8(str, files_name + (counter - index) * 50, 49);
-                        free(str);
-                    }
-                }
-                counter++;
-            }
-           
+    // Get the FAT filesystem from the VFS
+    const char *path_out;
+    mp_vfs_mount_t *vfs = mp_vfs_lookup_path(path, &path_out);
+    if (vfs == MP_VFS_NONE || vfs == MP_VFS_ROOT) {
+        mp_printf(MP_PYTHON_PRINTER, "VFS not found for path: %s\n", path);
+        return counter;
+    }
+
+    fs_user_mount_t *vfs_fat = MP_OBJ_TO_PTR(vfs->obj);
+    FATFS *fatfs = &vfs_fat->fatfs;
+
+    // Open directory using FatFS directly
+    FF_DIR dir;
+    FRESULT res = f_opendir(fatfs, &dir, path_out);
+    if (res != FR_OK) {
+        // mp_printf(MP_PYTHON_PRINTER, "f_opendir failed for path: %s (res=%d)\n", path, res);
+        return counter;
+    }
+
+    int len = strlen(path);
+    FILINFO fno;
+
+    while (true) {
+        res = f_readdir(&dir, &fno);
+        char *fn = fno.fname;
+
+        // Stop on error or end of directory
+        if (res != FR_OK || fn[0] == 0) {
+            break;
         }
-    
+
+        // Skip "lib" directory
+        if (strcmp(fn, "lib") == 0) {
+            continue;
+        }
+
+        if (fno.fattrib & AM_DIR) {
+            // Directory - recurse into it
+            char utf8[50];
+            convert_to_utf8(fn, utf8, sizeof(utf8));
+            int oldLen = len;
+            snprintf(&path[len], 128 - len, "/%s", fn);
+            counter = _list_files(path, index, max, counter, y);
+            path[oldLen] = 0;
+        } else {
+            // File - check if it's a .py file (but not boot.py)
+            size_t fn_len = strlen(fn);
+            if (strcmp(fn, "boot.py") == 0 || fn_len < 3 || strcmp(fn + fn_len - 3, ".py") != 0) {
+                continue;
+            }
+
+            if (counter - index >= max) {
+                f_closedir(&dir);
+                return 0xffff;
+            }
+
+            if (counter >= index) {
+                int slot = (counter - index) * 50;
+                if (path[0] == '.' && strlen(path) == 1) {
+                    // Store original name for file operations
+                    strncpy(files_name_raw + slot, fn, 49);
+                    files_name_raw[slot + 49] = '\0';
+                    // Store UTF-8 name for display
+                    convert_to_utf8(fn, files_name + slot, 49);
+                } else {
+                    // Store original path/name for file operations
+                    snprintf(files_name_raw + slot, 50, "%s/%s",
+                             path[0] == '.' ? path + 2 : path, fn);
+                    // Store UTF-8 path/name for display
+                    char str[260];
+                    snprintf(str, sizeof(str), "%s/%s", path[0] == '.' ? path + 2 : path, fn);
+                    convert_to_utf8(str, files_name + slot, 49);
+                }
+            }
+            counter++;
+        }
+    }
+
+    f_closedir(&dir);
     return counter;
 }
 
@@ -1188,11 +1220,14 @@ void debug_mode_config_enter(void)
 
     if (files_name == NULL)
     {
-        files_name = (char *)malloc(((DEBUG_MODE_CONFIG_SCROLL_FILE_END - DEBUG_MODE_CONFIG_SCROLL_FILE_START) + 1) * 50 * sizeof(char));
+        size_t buf_size = ((DEBUG_MODE_CONFIG_SCROLL_FILE_END - DEBUG_MODE_CONFIG_SCROLL_FILE_START) + 1) * 50 * sizeof(char);
+        files_name = (char *)malloc(buf_size);
+        files_name_raw = (char *)malloc(buf_size);
         size_t i;
         for (i = 0; i < (DEBUG_MODE_CONFIG_SCROLL_FILE_END - DEBUG_MODE_CONFIG_SCROLL_FILE_START) + 1; i++)
         {
             ((char *)(files_name + i * 50))[0] = '\0';
+            ((char *)(files_name_raw + i * 50))[0] = '\0';
         }
     }
 
@@ -1217,11 +1252,10 @@ void debug_mode_config_exit(void)
     debug_mode_ui_scrool_free(&scroll_files);
     thingz_set_input_target(THINGZ_INPUT_TARGET_PYTHON, NULL);
 
-    // for(i = 0; i < (DEBUG_MODE_CONFIG_SCROLL_FILE_END-DEBUG_MODE_CONFIG_SCROLL_FILE_START)+1; i++){
-    //     free(files_name[i]);
-    // }
     free(files_name);
     files_name = NULL;
+    free(files_name_raw);
+    files_name_raw = NULL;
 
     free(extended_page_title);
     extended_page_title = NULL;
