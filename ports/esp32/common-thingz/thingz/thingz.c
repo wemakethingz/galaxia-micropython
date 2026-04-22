@@ -7,6 +7,8 @@
 
 #include "driver/temperature_sensor.h"
 
+#define STRING_LIST(...) {__VA_ARGS__, ""}
+
 static const char *TAG = "THINGZ";
 
 #if MICROPY_THINGZ_BUTTONS_NB
@@ -72,6 +74,18 @@ static temperature_sensor_handle_t temperature_handle;
 
 void (*thingz_input_event_cb)(thingz_input_event_t);
 
+// Look for the first file that exists in the list of filenames, using mp_import_stat().
+// Return its index. If no file found, return -1.
+static const char *first_existing_file_in_list(const char *const *filenames) {
+    for (int i = 0; filenames[i] != (char *)""; i++) {
+        mp_import_stat_t stat = mp_import_stat(filenames[i]);
+        if (stat == MP_IMPORT_STAT_FILE) {
+            return filenames[i];
+        }
+    }
+    return NULL;
+}
+
 void thingz_set_python_file_to_exec(const char* name){
     nvs_handle* nvsHandle;
     nvsHandle = thingz_memory_get_handle();
@@ -84,7 +98,14 @@ char* thingz_get_python_file_to_exec(uint8_t cp437, uint8_t print){
     nvsHandle = thingz_memory_get_handle();
     size_t length = 256;
     if(nvs_get_str(*nvsHandle, "filename", python_file_to_exec, &length) != ESP_OK){
-        sprintf(python_file_to_exec, "%s", "main.py");
+        static const char *const supported_filenames[] = STRING_LIST(
+            "code.txt", "code.py", "main.py", "main.txt");        
+        const char *filename = first_existing_file_in_list(supported_filenames);
+        if (filename == NULL) {
+            sprintf(python_file_to_exec, "%s", "main.py");
+        }else{
+            sprintf(python_file_to_exec, "%s", filename);
+        }
     }
     
     if(print)

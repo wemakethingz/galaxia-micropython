@@ -262,6 +262,7 @@ void thingz_memory_replicate_settings(void){
 
 int32_t thingz_memory_get_setting(const char* name, void* value){
     // mp_printf(MP_PYTHON_PRINTER, "actual %d\n", thingz_memory_actual_eeprom);
+    // printf("Reading %s, corrupt %d present %d, protocol %d expected protocol %d\n", name, thingz_eeprom_info.eeprom_corrupt, thingz_eeprom_info.eeprom_present, thingz_eeprom_info.eeprom_protocol_version, thingz_eeprom_info.expected_protocol_version);
     if(thingz_eeprom_info.eeprom_corrupt){
         return -1;
     }

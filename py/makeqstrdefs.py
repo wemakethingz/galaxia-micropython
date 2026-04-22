@@ -40,6 +40,25 @@ def is_cxx_source(fname):
     return os.path.splitext(fname)[1] in [".cc", ".cp", ".cxx", ".cpp", ".CPP", ".c++", ".C"]
 
 
+def get_cache_path(source, output_dir):
+    """Get cache file path for a source file."""
+    # Create a unique cache filename from the source path
+    cache_name = source.replace("/", "__").replace("\\", "__").replace(":", "@").replace("..", "@@")
+    return os.path.join(output_dir, cache_name + ".pp_cache")
+
+
+def needs_preprocessing(source, cache_path):
+    """Check if source needs preprocessing (cache miss or outdated)."""
+    if not os.path.exists(cache_path):
+        return True
+    try:
+        source_mtime = os.path.getmtime(source)
+        cache_mtime = os.path.getmtime(cache_path)
+        return source_mtime > cache_mtime
+    except OSError:
+        return True
+
+
 def preprocess():
     if any(src in args.dependencies for src in args.changed_sources):
         sources = args.sources
@@ -47,41 +66,76 @@ def preprocess():
         sources = args.changed_sources
     else:
         sources = args.sources
-    csources = []
-    cxxsources = []
-    for source in sources:
-        if is_cxx_source(source):
-            cxxsources.append(source)
-        elif is_c_source(source):
-            csources.append(source)
+
+    # Setup cache directory
+    cache_dir = os.path.dirname(args.output[0])
     try:
-        os.makedirs(os.path.dirname(args.output[0]))
+        os.makedirs(cache_dir)
     except OSError:
         pass
 
-    def pp(flags):
-        def run(files):
-            try:
-                return subprocess.check_output(args.pp + flags + files)
-            except subprocess.CalledProcessError as er:
-                raise PreprocessorError(str(er))
+    # Filter sources that need preprocessing (cache check)
+    csources_to_process = []
+    cxxsources_to_process = []
+    cached_outputs = []
 
-        return run
+    for source in sources:
+        cache_path = get_cache_path(source, cache_dir)
+        if needs_preprocessing(source, cache_path):
+            if is_cxx_source(source):
+                cxxsources_to_process.append(source)
+            elif is_c_source(source):
+                csources_to_process.append(source)
+        else:
+            # Use cached result
+            try:
+                with open(cache_path, "rb") as f:
+                    cached_outputs.append(f.read())
+            except IOError:
+                # Cache read failed, reprocess
+                if is_cxx_source(source):
+                    cxxsources_to_process.append(source)
+                elif is_c_source(source):
+                    csources_to_process.append(source)
+
+    total_sources = len(sources)
+    cached_count = total_sources - len(csources_to_process) - len(cxxsources_to_process)
+    if cached_count > 0:
+        print("QSTR: %d/%d files cached, processing %d" % (cached_count, total_sources, total_sources - cached_count))
+
+    def pp_single(args_tuple):
+        """Preprocess a single file and cache the result."""
+        flags, source = args_tuple
+        cache_path = get_cache_path(source, cache_dir)
+        try:
+            output = subprocess.check_output(args.pp + flags + [source])
+            # Cache the result
+            with open(cache_path, "wb") as f:
+                f.write(output)
+            return output
+        except subprocess.CalledProcessError as er:
+            raise PreprocessorError(str(er))
 
     try:
         cpus = multiprocessing.cpu_count()
     except NotImplementedError:
         cpus = 1
     p = multiprocessing.dummy.Pool(cpus)
+
     with open(args.output[0], "wb") as out_file:
-        for flags, sources in (
-            (args.cflags, csources),
-            (args.cxxflags, cxxsources),
+        # Write cached outputs first
+        for cached in cached_outputs:
+            out_file.write(cached)
+
+        # Process and write new outputs
+        for flags, sources_to_proc in (
+            (args.cflags, csources_to_process),
+            (args.cxxflags, cxxsources_to_process),
         ):
-            batch_size = (len(sources) + cpus - 1) // cpus
-            chunks = [sources[i : i + batch_size] for i in range(0, len(sources), batch_size or 1)]
-            for output in p.imap(pp(flags), chunks):
-                out_file.write(output)
+            if sources_to_proc:
+                work_items = [(flags, src) for src in sources_to_proc]
+                for output in p.imap(pp_single, work_items):
+                    out_file.write(output)
 
 
 def write_out(fname, output):

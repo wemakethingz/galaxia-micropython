@@ -1000,94 +1000,185 @@ thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int
             return bitmap;
         }
 
-        ESP_LOGW("BMP", "D: before malloc colors");
-        uint16_t *colors = (uint16_t*)m_malloc(sizeof(uint16_t) * (rotation ? bitmap.height : bitmap.width));
-        ESP_LOGW("BMP", "E: after malloc colors, before malloc line_buffer");
-        // Allocate line buffer ONCE for all rows to avoid repeated malloc/free (reuse bytes_per_pixel from above)
-        uint16_t max_line_size = (rotation ? bitmap.height : bitmap.width) * bytes_per_pixel;
-        uint8_t *line_buffer = (uint8_t*)m_malloc(max_line_size);
-        ESP_LOGW("BMP", "F: after malloc line_buffer, before loop");
+        // OPTIMIZATION: Read BMP lines in blocks and group SPI transfers
+        // Block parameters - tuned for memory/performance balance
+        #define BMP_BLOCK_LINES 32      // Read 16 BMP lines at a time (reduces file seeks)
+        #define SPI_GROUP_COLS 8        // Send 8 columns per SPI transaction (reduces SPI overhead)
 
-        uint8_t _x = 0, _x2, _y, _y2;
-        for (int row=row_start; row< row_end; row++) { // Draw only visible rows
+        ESP_LOGW("BMP", "D: optimized render start");
 
-            _x = rotation ? row : 0;
-            _x2 = rotation ? row : bitmap.width-1;
-            _y = rotation ? y_offset : row;  // Start from y_offset if clipped at top
-            _y2 = rotation ? (y_offset + visible_height - 1) : row;  // End at visible portion
-            _thingz_get_pixels(&bitmap, _x, _y, _x2, _y2, colors, line_buffer);
+        // Allocate block buffer for reading multiple BMP lines at once
+        uint32_t block_buffer_size = BMP_BLOCK_LINES * bitmap.stride;
+        uint8_t *block_buffer = (uint8_t*)m_malloc(block_buffer_size);
 
-            if(rotation){
-                uint16_t color;
-                int swap_len = visible_height / 2;
-                for(int i = 0; i < swap_len; i++){
-                    color = colors[i];
-                    colors[i] = colors[visible_height-1-i];
-                    colors[visible_height-1-i] = color;
+        // Allocate output buffer for grouped columns (SPI_GROUP_COLS columns * visible_height pixels)
+        uint16_t *output_buffer = (uint16_t*)m_malloc(sizeof(uint16_t) * SPI_GROUP_COLS * visible_height);
+
+        ESP_LOGW("BMP", "E: buffers allocated, block=%lu out=%d", block_buffer_size, SPI_GROUP_COLS * visible_height * 2);
+
+        // Process columns in groups
+        int col = row_start;
+        while(col < row_end) {
+            // Determine how many columns in this group
+            int cols_in_group = (col + SPI_GROUP_COLS <= row_end) ? SPI_GROUP_COLS : (row_end - col);
+
+            // Calculate screen coordinates for this group
+            int16_t draw_y_start = x + col;
+            int16_t draw_y_end = x + col + cols_in_group - 1;
+
+            // Check if any column in this group is visible on screen
+            if(draw_y_end < 0 || draw_y_start >= MICROPY_THINGZ_SCREEN_WIDTH) {
+                col += cols_in_group;
+                continue;  // Skip this group entirely
+            }
+
+            // Clamp to visible screen area
+            int first_visible_col = 0;
+            int last_visible_col = cols_in_group - 1;
+            if(draw_y_start < 0) {
+                first_visible_col = -draw_y_start;
+                draw_y_start = 0;
+            }
+            if(draw_y_end >= MICROPY_THINGZ_SCREEN_WIDTH) {
+                last_visible_col = cols_in_group - 1 - (draw_y_end - MICROPY_THINGZ_SCREEN_WIDTH + 1);
+                draw_y_end = MICROPY_THINGZ_SCREEN_WIDTH - 1;
+            }
+            int visible_cols_in_group = last_visible_col - first_visible_col + 1;
+
+            // Clear output buffer
+            memset(output_buffer, 0, sizeof(uint16_t) * cols_in_group * visible_height);
+
+            // Read BMP rows in blocks and extract columns
+            // BMP is stored bottom-to-top, visible area is from y_offset to y_offset+visible_height-1
+            int bmp_row = y_offset;
+            int out_row = visible_height - 1;  // Fill output from bottom (for rotation)
+
+            while(bmp_row < y_offset + visible_height) {
+                // Calculate how many lines to read in this block
+                int lines_remaining = (y_offset + visible_height) - bmp_row;
+                int lines_to_read = (lines_remaining > BMP_BLOCK_LINES) ? BMP_BLOCK_LINES : lines_remaining;
+
+                // Seek to the start of this block in the file
+                // BMP row N is at file offset: data_offset + (height-1-N) * stride
+                uint32_t first_bmp_row_in_block = bmp_row + lines_to_read - 1;
+                uint32_t file_row = bitmap.height - 1 - first_bmp_row_in_block;
+                uint32_t file_offset = bitmap.data_offset + file_row * bitmap.stride;
+                f_lseek(&f->fp, file_offset);
+
+                // Read multiple lines at once (sequential read, much faster than individual seeks)
+                UINT bytes_read;
+                f_read(&f->fp, block_buffer, lines_to_read * bitmap.stride, &bytes_read);
+
+                // Process each line in the block
+                for(int block_line = 0; block_line < lines_to_read && out_row >= 0; block_line++) {
+                    // Line in block_buffer (block_line=0 is the highest BMP row we read)
+                    uint8_t *line_data = block_buffer + (lines_to_read - 1 - block_line) * bitmap.stride;
+
+                    // Extract pixels for columns in current group
+                    for(int c = 0; c < cols_in_group; c++) {
+                        int bmp_col = col + c;
+                        uint32_t pixel_data = 0;
+
+                        // Extract pixel from line_data based on format
+                        if(pixels_per_byte > 0) {
+                            // Sub-byte pixels (1, 4 bpp)
+                            int byte_idx = bmp_col / pixels_per_byte;
+                            pixel_data = line_data[byte_idx];
+                            int offset = (bmp_col % pixels_per_byte) * bitmap.bits_per_pixel;
+                            uint8_t mask = (1 << bitmap.bits_per_pixel) - 1;
+                            pixel_data = (pixel_data >> ((8 - bitmap.bits_per_pixel) - offset)) & mask;
+                        } else {
+                            // Multi-byte pixels (8, 16, 24, 32 bpp)
+                            int byte_idx = bmp_col * bytes_per_pixel;
+                            for(int b = 0; b < bytes_per_pixel; b++) {
+                                pixel_data |= ((uint32_t)line_data[byte_idx + b]) << (b * 8);
+                            }
+                            pixel_data = _thingz_decode_pixel(pixel_data, bytes_per_pixel, pixels_per_byte, bitmap.bits_per_pixel, bmp_col, &bitmap);
+                        }
+
+                        // Apply palette if indexed
+                        if(bitmap.palette != NULL) {
+                            pixel_data = bitmap.palette[pixel_data];
+                        }
+
+                        // Replace white
+                        if(pixel_data == 0xFFFFFF) {
+                            pixel_data = bitmap.white_replacement_color;
+                        }
+
+                        // Convert to RGB565 and store in output buffer
+                        // Output is organized as: [col0_row0, col0_row1, ..., col0_rowN, col1_row0, ...]
+                        output_buffer[c * visible_height + out_row] = RGB888_TO_RGB565(pixel_data);
+                    }
+                    out_row--;
+                }
+
+                bmp_row += lines_to_read;
+            }
+
+            // Send visible columns via SPI
+            // Wait for previous async transaction
+            if(thingz_screen.pendingTrans) {
+                spi_wait_for_pending_trans(&(thingz_screen.dev), (spi_transaction_t*)thingz_screen.pendingTrans);
+                thingz_screen.pendingTrans = NULL;
+            }
+
+            // Select buffer and transaction structure
+            uint8_t* byte_buffer = (uint8_t*)(thingz_screen.activeBuffer == 0 ? thingz_screen.lineData : thingz_screen.lineData2);
+            spi_transaction_t* trans_struct = (spi_transaction_t*)thingz_screen.transPool[thingz_screen.activeBuffer];
+
+            // Convert only visible columns to big-endian bytes for SPI
+            int byte_index = 0;
+            for(int c = first_visible_col; c <= last_visible_col; c++) {
+                for(int r = 0; r < visible_height; r++) {
+                    uint16_t color = output_buffer[c * visible_height + r];
+                    byte_buffer[byte_index++] = (color >> 8) & 0xFF;
+                    byte_buffer[byte_index++] = color & 0xFF;
                 }
             }
 
-            // Calculate LCD coordinates (with rotation: user Y → LCD X, user X → LCD Y)
+            // Setup LCD window for grouped columns
             int16_t draw_x_coord = MICROPY_THINGZ_SCREEN_HEIGHT - visible_height - visible_y_start;
-            int16_t draw_y_coord = x + row;
 
-            // Draw visible portion only with double buffering
-            if(draw_y_coord >= 0 && draw_y_coord < MICROPY_THINGZ_SCREEN_WIDTH) {
-                // Wait for previous async transaction to complete
-                if(thingz_screen.pendingTrans) {
-                    spi_wait_for_pending_trans(&(thingz_screen.dev), (spi_transaction_t*)thingz_screen.pendingTrans);
-                    thingz_screen.pendingTrans = NULL;
-                }
+            uint16_t lcd_x1 = draw_x_coord + thingz_screen.dev._offsetx;
+            uint16_t lcd_x2 = lcd_x1 + visible_height - 1;
+            uint16_t lcd_y1 = draw_y_start + thingz_screen.dev._offsety;
+            uint16_t lcd_y2 = draw_y_end + thingz_screen.dev._offsety;
 
-                // Select buffer (alternate between lineData and lineData2)
-                uint8_t* byte_buffer = (uint8_t*)(thingz_screen.activeBuffer == 0 ? thingz_screen.lineData : thingz_screen.lineData2);
+            if (thingz_screen.dev._model == 0x7735) {
+                spi_master_write_comm_byte(&(thingz_screen.dev), 0x2A);
+                spi_master_write_data_word(&(thingz_screen.dev), lcd_x1);
+                spi_master_write_data_word(&(thingz_screen.dev), lcd_x2);
+                spi_master_write_comm_byte(&(thingz_screen.dev), 0x2B);
+                spi_master_write_data_word(&(thingz_screen.dev), lcd_y1);
+                spi_master_write_data_word(&(thingz_screen.dev), lcd_y2);
+                spi_master_write_comm_byte(&(thingz_screen.dev), 0x2C);
 
-                // Select transaction structure from pool (alternate with buffer)
-                spi_transaction_t* trans_struct = (spi_transaction_t*)thingz_screen.transPool[thingz_screen.activeBuffer];
+                // Send async with DMA
+                spi_master_write_colors_async(&(thingz_screen.dev), byte_buffer, visible_cols_in_group * visible_height * 2, trans_struct);
+                thingz_screen.pendingTrans = trans_struct;
 
-                // Convert uint16_t colors to uint8_t bytes (big endian for SPI)
-                int byte_index = 0;
-                for(int i = 0; i < visible_height; i++) {
-                    byte_buffer[byte_index++] = (colors[i] >> 8) & 0xFF;
-                    byte_buffer[byte_index++] = colors[i] & 0xFF;
-                }
-
-                // Setup LCD window
-                uint16_t _x1 = draw_x_coord + thingz_screen.dev._offsetx;
-                uint16_t _x2 = _x1 + visible_height;
-                uint16_t _y1 = draw_y_coord + thingz_screen.dev._offsety;
-                uint16_t _y2 = _y1;
-
-                if (thingz_screen.dev._model == 0x7735) {
-                    spi_master_write_comm_byte(&(thingz_screen.dev), 0x2A);
-                    spi_master_write_data_word(&(thingz_screen.dev), _x1);
-                    spi_master_write_data_word(&(thingz_screen.dev), _x2);
-                    spi_master_write_comm_byte(&(thingz_screen.dev), 0x2B);
-                    spi_master_write_data_word(&(thingz_screen.dev), _y1);
-                    spi_master_write_data_word(&(thingz_screen.dev), _y2);
-                    spi_master_write_comm_byte(&(thingz_screen.dev), 0x2C);
-
-                    // Send async with DMA using dedicated transaction structure from pool
-                    spi_master_write_colors_async(&(thingz_screen.dev), byte_buffer, visible_height * 2, trans_struct);
-                    thingz_screen.pendingTrans = trans_struct;
-
-                    // Toggle buffer for next iteration
-                    thingz_screen.activeBuffer = 1 - thingz_screen.activeBuffer;
-                }
-
-                bitmap.shown = 1;
+                // Toggle buffer
+                thingz_screen.activeBuffer = 1 - thingz_screen.activeBuffer;
             }
-        } // end for row
 
-        // Wait for final async transaction to complete
+            bitmap.shown = 1;
+            col += cols_in_group;
+        }
+
+        // Wait for final async transaction
         if(thingz_screen.pendingTrans) {
             spi_wait_for_pending_trans(&(thingz_screen.dev), (spi_transaction_t*)thingz_screen.pendingTrans);
             thingz_screen.pendingTrans = NULL;
         }
-        ESP_LOGW("BMP", "G: after loop, before free");
 
-        m_free(line_buffer);
-        m_free(colors);
+        ESP_LOGW("BMP", "G: render complete");
+
+        m_free(output_buffer);
+        m_free(block_buffer);
+
+        #undef BMP_BLOCK_LINES
+        #undef SPI_GROUP_COLS
     }
 
     ESP_LOGW("BMP", "H: before close file");

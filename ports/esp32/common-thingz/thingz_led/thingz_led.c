@@ -76,56 +76,41 @@ void thingz_led_init(thingz_led_obj_t* led, int8_t pinR, int8_t pinG, int8_t pin
         return;
     #endif
 
-    mp_obj_t args[2];
-    args[0] = mp_obj_new_int(pinR);
-    args[1] = mp_obj_new_int(2000);
-    args[0] = MP_OBJ_TYPE_GET_SLOT(&machine_pin_type,make_new)(&machine_pin_type, 1, 0, args);
-    led->mp_pwm[0] = MP_OBJ_TYPE_GET_SLOT(&machine_pwm_type,make_new)(&machine_pwm_type, 2, 0, args);
-    args[0] = mp_obj_new_int(pinG);
-    args[0] = MP_OBJ_TYPE_GET_SLOT(&machine_pin_type,make_new)(&machine_pin_type, 1, 0, args);
-    led->mp_pwm[1] = MP_OBJ_TYPE_GET_SLOT(&machine_pwm_type,make_new)(&machine_pwm_type, 2, 0, args);
-    args[0] = mp_obj_new_int(pinB);
-    args[0] = MP_OBJ_TYPE_GET_SLOT(&machine_pin_type,make_new)(&machine_pin_type, 1, 0, args);
-    led->mp_pwm[2] = MP_OBJ_TYPE_GET_SLOT(&machine_pwm_type, make_new)(&machine_pwm_type, 2, 0, args);
-
-    gpio_config_t io_conf;
-
-    io_conf.pin_bit_mask = 1ull << pinR | 1ull << pinG | 1ull << pinB | 1ull << pinGND;
-    io_conf.mode = GPIO_MODE_INPUT_OUTPUT;
-
-
+    // Step 1: Reset all pins first to clear any previous configuration
     gpio_reset_pin(pinR);
     gpio_reset_pin(pinG);
     gpio_reset_pin(pinB);
     gpio_reset_pin(pinGND);
 
+    // Step 2: Configure GND pin as output (drive low) with fully initialized struct
+    gpio_config_t io_conf = {
+        .pin_bit_mask = 1ULL << pinGND,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
     gpio_config(&io_conf);
-
-    gpio_set_level(pinR, 0);
-    gpio_set_level(pinG, 0);
-    gpio_set_level(pinB, 0);
-    
-
-    // common_hal_pwmio_pwmout_construct(&led_circuitpy[0], led->pinR, 0, 5000, false);
-    // common_hal_pwmio_pwmout_construct(&led_circuitpy[1], led->pinG, 0, 5000, false);
-    // common_hal_pwmio_pwmout_construct(&led_circuitpy[2], led->pinB, 0, 5000, false);
-
-    // mp_machine_pwm_init_helper(led_micropy, 1, mp_obj_new_int(pinR), NULL);
-    // mp_machine_pwm_init_helper(led_micropy+1, 1, mp_obj_new_int(pinG), NULL);
-    // mp_machine_pwm_init_helper(led_micropy+2, 1, mp_obj_new_int(pinB), NULL);
-    // mp_map_t *locals_map_sensor = &machine_pwm_type.locals_dict->map;
-    // mp_map_elem_t *init = mp_map_lookup(locals_map_sensor, MP_OBJ_NEW_QSTR(MP_QSTR_init), MP_MAP_LOOKUP);
-    // ((mp_obj_fun_builtin_var_t*)init->value)->.fun.kw() 
-
-    thingz_led_config_pwm(led, 0, 0, 0);
-
     gpio_set_level(pinGND, 0);
 
-    // pwmio_pwmout_obj_t led_circuitpy[3];
 
-    // common_hal_pwmio_pwmout_construct(&led_circuitpy[0], led->pinR, 0, 5000, false);
-    // common_hal_pwmio_pwmout_construct(&led_circuitpy[1], led->pinG, 0, 5000, false);
-    // common_hal_pwmio_pwmout_construct(&led_circuitpy[2], led->pinB, 0, 5000, false);
+    // Step 3: Create PWM objects for RGB pins (after reset)
+    mp_obj_t args[2];
+    args[0] = mp_obj_new_int(pinR);
+    args[1] = mp_obj_new_int(2000);
+    args[0] = MP_OBJ_TYPE_GET_SLOT(&machine_pin_type, make_new)(&machine_pin_type, 1, 0, args);
+    led->mp_pwm[0] = MP_OBJ_TYPE_GET_SLOT(&machine_pwm_type, make_new)(&machine_pwm_type, 2, 0, args);
+
+    args[0] = mp_obj_new_int(pinG);
+    args[0] = MP_OBJ_TYPE_GET_SLOT(&machine_pin_type, make_new)(&machine_pin_type, 1, 0, args);
+    led->mp_pwm[1] = MP_OBJ_TYPE_GET_SLOT(&machine_pwm_type, make_new)(&machine_pwm_type, 2, 0, args);
+
+    args[0] = mp_obj_new_int(pinB);
+    args[0] = MP_OBJ_TYPE_GET_SLOT(&machine_pin_type, make_new)(&machine_pin_type, 1, 0, args);
+    led->mp_pwm[2] = MP_OBJ_TYPE_GET_SLOT(&machine_pwm_type, make_new)(&machine_pwm_type, 2, 0, args);
+
+    // Step 4: Configure PWM with initial duty cycle of 0 (LED off)
+    thingz_led_config_pwm(led, 0, 0, 0);
 
 }
 

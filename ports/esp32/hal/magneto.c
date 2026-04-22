@@ -332,7 +332,7 @@ void common_thingz_compass_init(thingz_compass_obj_t* compass, int8_t pinDRDY, u
     _load_calibration_data(version);
 
     
-    if(version == THINGZ_VERSION_1_0_9){
+    if(version == THINGZ_VERSION_1_0_9 || version == THINGZ_VERSION_1_1_0){
         compass_addr = LIS2MDL_ADDR;
     }
     //version 1.0.8 was never released
