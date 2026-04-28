@@ -11,6 +11,12 @@
 
 #include "freertos/queue.h"
 
+#define THINGZ_BMP_BLOCK_LINES   32
+#define THINGZ_BMP_GROUP_COLS    8
+// Max block_buffer: BLOCK_LINES rows × max stride (screen_width × 4 bytes for 32bpp)
+#define THINGZ_BMP_BLOCK_BUF_SIZE  (THINGZ_BMP_BLOCK_LINES * MICROPY_THINGZ_SCREEN_WIDTH * 4)
+// Max output_buffer: GROUP_COLS columns × screen_height rows × 2 bytes (RGB565)
+#define THINGZ_BMP_OUTPUT_BUF_SIZE (THINGZ_BMP_GROUP_COLS * MICROPY_THINGZ_SCREEN_HEIGHT)
 
 typedef struct thingz_screen_obj thingz_screen_obj_t;
 
@@ -37,6 +43,8 @@ typedef struct{
     thingz_screen_obj_t *screen;
     thingz_screen_raw_show_obj_t* head;
     QueueHandle_t transfer_queue;
+    uint8_t*  bmp_block_buffer;   // pre-allocated BMP line read buffer (THINGZ_BMP_BLOCK_BUF_SIZE bytes)
+    uint16_t* bmp_output_buffer;  // pre-allocated column output buffer (THINGZ_BMP_OUTPUT_BUF_SIZE uint16_t)
 } thingz_screen_raw_t;
 
 typedef struct {

@@ -309,7 +309,8 @@ void thingz_screen_raw_init(thingz_screen_raw_t *raw, thingz_screen_obj_t *scree
 
     raw->screen = screen;
     raw->head = NULL;
-
+    raw->bmp_block_buffer  = malloc(THINGZ_BMP_BLOCK_BUF_SIZE);
+    raw->bmp_output_buffer = malloc(THINGZ_BMP_OUTPUT_BUF_SIZE * sizeof(uint16_t));
 }
 
 void thingz_screen_raw_enter(thingz_screen_raw_t *raw){
@@ -699,8 +700,8 @@ static uint8_t _thingz_screen_raw_refresh_text(thingz_screen_raw_t *raw, thingz_
 
 // Helper to extract object properties
 typedef struct {
-    uint8_t x, y, width, height;
-    uint8_t sx, sy, swidth, sheight;
+    int16_t x, y, width, height;
+    int16_t sx, sy, swidth, sheight;
 } obj_bounds_t;
 
 static inline void _thingz_get_obj_bounds(mp_obj_t obj, obj_bounds_t *bounds) {
@@ -742,10 +743,13 @@ static uint8_t _thingz_screen_raw_is_overlapping(thingz_screen_raw_show_obj_t* o
     _thingz_get_obj_bounds(o1->show_obj, &b1);
     _thingz_get_obj_bounds(o2->show_obj, &b2);
 
-    return ((b1.sx <= b2.sx && b2.sx <= b1.sx+b1.swidth-1)
-    ||     (b1.sx <= b2.sx+b2.swidth-1 && b2.sx+b2.swidth-1 <= b1.sx+b1.swidth-1)
-    ||     (b1.sy <= b2.sy && b2.sy <= b1.sy+b1.sheight-1)
-    ||     (b1.sy <= b2.sy+b2.sheight-1 && b2.sy+b2.sheight-1 <= b1.sy+b1.sheight-1))
+    // Proper 2D rectangle overlap: both X and Y ranges must overlap.
+    // The previous OR-only check failed when one rect fully contains the other
+    // (e.g. a full-screen image covering a small paddle).
+    uint8_t x_overlap = (b1.sx < b2.sx + b2.swidth) && (b1.sx + b1.swidth > b2.sx);
+    uint8_t y_overlap = (b1.sy < b2.sy + b2.sheight) && (b1.sy + b1.sheight > b2.sy);
+
+    return (x_overlap && y_overlap)
     &&(    //if there is no change of object o2 we don't need to refresh o1
            (b2.sx != b2.x)
     ||     (b2.sy != b2.y)
@@ -756,16 +760,16 @@ static uint8_t _thingz_screen_raw_is_overlapping(thingz_screen_raw_show_obj_t* o
 }
 
 static uint8_t _thingz_screen_raw_is_obj_on_top(thingz_screen_raw_show_obj_t* current){
+    // Check if any lower-z object (prev chain) changed and overlaps current.
+    // current must then redraw to stay on top of the changed lower-z object.
     thingz_screen_raw_show_obj_t* obj = current->prev;
-    uint8_t on_top = 0;
     while(obj != NULL){
         if(_thingz_screen_raw_is_overlapping(current, obj)){
             return 1;
         }
-        obj = obj->next;
+        obj = obj->prev;
     }
-    return on_top;
-
+    return 0;
 }
 
 static uint8_t _thingz_screen_raw_is_obj_under(thingz_screen_raw_show_obj_t* current){
@@ -807,33 +811,113 @@ static mp_obj_t mp_thingz_screen_raw_refresh(void* r){
         refresh_in_progress = false;
         return mp_const_none;
     }
+    // Pre-pass: reset flags and clear old areas BEFORE any drawing.
+    // For images: clear only the vacated strips (not the full area) to avoid flicker
+    //   and unnecessary SPI writes. screen_show=0 causes the main pass to use the
+    //   "first-time show" path which redraws at the new position without strip clearing.
+    // For rectangles/texts: clear the full old area (fill_rect is cheap, no flash read).
     thingz_screen_raw_show_obj_t* obj = raw->head;
+    while(obj != NULL) {
+        obj->was_updated = 0;
+        if (obj->show_obj) {
+            if(mp_obj_is_type(obj->show_obj, &mp_thingz_display_raw_img_type)){
+                thingz_display_raw_img_obj_t* img = obj->show_obj;
+                if (img->screen_show) {
+                    if (!img->show) {
+                        // Becoming invisible: clear full area
+                        thingz_screen_raw_fill_rect(&(thingz_screen.raw), img->screen_x, img->screen_x+img->bmp.width-1,
+                                                   img->screen_y, img->screen_y+img->bmp.height-1, 0);
+                        img->screen_show = 0;
+                        obj->was_updated = 1;
+                    } else {
+                        int16_t dx = img->x - img->screen_x;
+                        int16_t dy = img->y - img->screen_y;
+                        uint8_t color_changed = (img->screen_white_replacement_color != img->white_replacement_color);
+                        if (dx != 0 || dy != 0 || color_changed) {
+                            if (color_changed && dx == 0 && dy == 0) {
+                                // Color only: clear full area
+                                thingz_screen_raw_fill_rect(&(thingz_screen.raw), img->screen_x, img->screen_x+img->bmp.width-1,
+                                                           img->screen_y, img->screen_y+img->bmp.height-1, 0);
+                            } else {
+                                // Position changed: clear only the vacated strips
+                                if (dx > 0) {
+                                    thingz_screen_raw_fill_rect(&(thingz_screen.raw),
+                                        img->screen_x, img->x - 1,
+                                        img->screen_y, img->screen_y + img->bmp.height - 1, 0);
+                                } else if (dx < 0) {
+                                    thingz_screen_raw_fill_rect(&(thingz_screen.raw),
+                                        img->x + img->bmp.width, img->screen_x + img->bmp.width - 1,
+                                        img->screen_y, img->screen_y + img->bmp.height - 1, 0);
+                                }
+                                if (dy > 0) {
+                                    thingz_screen_raw_fill_rect(&(thingz_screen.raw),
+                                        img->screen_x, img->screen_x + img->bmp.width - 1,
+                                        img->screen_y, img->y - 1, 0);
+                                } else if (dy < 0) {
+                                    thingz_screen_raw_fill_rect(&(thingz_screen.raw),
+                                        img->screen_x, img->screen_x + img->bmp.width - 1,
+                                        img->y + img->bmp.height, img->screen_y + img->bmp.height - 1, 0);
+                                }
+                            }
+                            img->screen_show = 0;
+                            obj->was_updated = 1;
+                        }
+                    }
+                }
+            } else if(mp_obj_is_type(obj->show_obj, &mp_thingz_display_raw_rectangle_type)){
+                thingz_display_raw_rectangle_obj_t* rect = obj->show_obj;
+                if (rect->screen_show) {
+                    uint8_t changed = !rect->show
+                        || (rect->screen_x != rect->x) || (rect->screen_y != rect->y)
+                        || (rect->screen_width != rect->width) || (rect->screen_height != rect->height)
+                        || (rect->screen_color != rect->color);
+                    if (changed) {
+                        thingz_screen_raw_fill_rect(&(thingz_screen.raw), rect->screen_x, rect->screen_x+rect->screen_width-1,
+                                                   rect->screen_y, rect->screen_y+rect->screen_height-1, 0);
+                        rect->screen_show = 0;
+                        obj->was_updated = 1;
+                    }
+                }
+            } else if(mp_obj_is_type(obj->show_obj, &mp_thingz_display_raw_text_type)){
+                thingz_display_raw_text_obj_t* text = obj->show_obj;
+                if (text->screen_show) {
+                    uint8_t changed = !text->show || text->has_changed
+                        || (text->screen_x != text->x) || (text->screen_y != text->y)
+                        || (text->screen_color != text->color);
+                    if (changed) {
+                        thingz_screen_raw_fill_rect(&(thingz_screen.raw), text->screen_x, text->screen_x+text->screen_width-1,
+                                                   text->screen_y, text->screen_y+text->screen_height-1, 0);
+                        text->screen_show = 0;
+                        obj->was_updated = 1;
+                    }
+                }
+            }
+        }
+        obj = obj->next;
+    }
+
+    // Main pass: refresh all objects in z-order (head=low-z, tail=high-z).
+    // was_updated from the pre-pass drives force_refresh for objects uncovered by the cleared areas.
+    obj = raw->head;
     while(obj != NULL){
-        ESP_LOGW("RAW", "start");
-        // Skip if show_obj is NULL or invalid to prevent crashes on freed objects
         if (!obj->show_obj) {
             obj = obj->next;
             continue;
         }
 
-        obj->was_updated = 0;
         uint8_t force_refresh = _thingz_screen_raw_is_obj_on_top(obj);
         if(!force_refresh){
             force_refresh = _thingz_screen_raw_is_obj_under(obj);
         }
         if(mp_obj_is_type(obj->show_obj, &mp_thingz_display_raw_rectangle_type)){
-            obj->was_updated = _thingz_screen_raw_refresh_rectangle(raw, obj->show_obj, force_refresh);
-            ESP_LOGW("RAW", "rectangle %d", obj->was_updated);
+            obj->was_updated |= _thingz_screen_raw_refresh_rectangle(raw, obj->show_obj, force_refresh);
         }else if(mp_obj_is_type(obj->show_obj, &mp_thingz_display_raw_img_type)){
-            obj->was_updated = _thingz_screen_raw_refresh_image(raw, obj->show_obj, force_refresh);
-            ESP_LOGW("RAW", "image %d", obj->was_updated);
+            obj->was_updated |= _thingz_screen_raw_refresh_image(raw, obj->show_obj, force_refresh);
         }else if(mp_obj_is_type(obj->show_obj, &mp_thingz_display_raw_text_type)){
-            obj->was_updated = _thingz_screen_raw_refresh_text(raw, obj->show_obj, force_refresh);
-            ESP_LOGW("RAW", "text %d", obj->was_updated);
+            obj->was_updated |= _thingz_screen_raw_refresh_text(raw, obj->show_obj, force_refresh);
         }
         obj = obj->next;
     }
-    ESP_LOGW("RAW", "done");
     xSemaphoreGive(controlLcd);  // Release semaphore
     refresh_in_progress = false;  // Clear flag after work is done
 
@@ -1000,27 +1084,23 @@ thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int
             return bitmap;
         }
 
-        // OPTIMIZATION: Read BMP lines in blocks and group SPI transfers
-        // Block parameters - tuned for memory/performance balance
-        #define BMP_BLOCK_LINES 32      // Read 16 BMP lines at a time (reduces file seeks)
-        #define SPI_GROUP_COLS 8        // Send 8 columns per SPI transaction (reduces SPI overhead)
+        // Guard: pre-allocated block buffer covers images up to screen_width wide.
+        // Skip rendering if the image stride exceeds the buffer (image too wide for screen).
+        if (bitmap.stride > MICROPY_THINGZ_SCREEN_WIDTH * 4 || !raw->bmp_block_buffer || !raw->bmp_output_buffer) {
+            f_close(&f->fp);
+            if (bitmap.palette) m_free(bitmap.palette);
+            return bitmap;
+        }
 
-        ESP_LOGW("BMP", "D: optimized render start");
+        uint8_t  *block_buffer  = raw->bmp_block_buffer;
+        uint16_t *output_buffer = raw->bmp_output_buffer;
 
-        // Allocate block buffer for reading multiple BMP lines at once
-        uint32_t block_buffer_size = BMP_BLOCK_LINES * bitmap.stride;
-        uint8_t *block_buffer = (uint8_t*)m_malloc(block_buffer_size);
-
-        // Allocate output buffer for grouped columns (SPI_GROUP_COLS columns * visible_height pixels)
-        uint16_t *output_buffer = (uint16_t*)m_malloc(sizeof(uint16_t) * SPI_GROUP_COLS * visible_height);
-
-        ESP_LOGW("BMP", "E: buffers allocated, block=%lu out=%d", block_buffer_size, SPI_GROUP_COLS * visible_height * 2);
 
         // Process columns in groups
         int col = row_start;
         while(col < row_end) {
             // Determine how many columns in this group
-            int cols_in_group = (col + SPI_GROUP_COLS <= row_end) ? SPI_GROUP_COLS : (row_end - col);
+            int cols_in_group = (col + THINGZ_BMP_GROUP_COLS <= row_end) ? THINGZ_BMP_GROUP_COLS : (row_end - col);
 
             // Calculate screen coordinates for this group
             int16_t draw_y_start = x + col;
@@ -1056,7 +1136,7 @@ thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int
             while(bmp_row < y_offset + visible_height) {
                 // Calculate how many lines to read in this block
                 int lines_remaining = (y_offset + visible_height) - bmp_row;
-                int lines_to_read = (lines_remaining > BMP_BLOCK_LINES) ? BMP_BLOCK_LINES : lines_remaining;
+                int lines_to_read = (lines_remaining > THINGZ_BMP_BLOCK_LINES) ? THINGZ_BMP_BLOCK_LINES : lines_remaining;
 
                 // Seek to the start of this block in the file
                 // BMP row N is at file offset: data_offset + (height-1-N) * stride
@@ -1066,8 +1146,8 @@ thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int
                 f_lseek(&f->fp, file_offset);
 
                 // Read multiple lines at once (sequential read, much faster than individual seeks)
-                UINT bytes_read;
-                f_read(&f->fp, block_buffer, lines_to_read * bitmap.stride, &bytes_read);
+                UINT bytes_read_block;
+                f_read(&f->fp, block_buffer, lines_to_read * bitmap.stride, &bytes_read_block);
 
                 // Process each line in the block
                 for(int block_line = 0; block_line < lines_to_read && out_row >= 0; block_line++) {
@@ -1174,11 +1254,6 @@ thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int
 
         ESP_LOGW("BMP", "G: render complete");
 
-        m_free(output_buffer);
-        m_free(block_buffer);
-
-        #undef BMP_BLOCK_LINES
-        #undef SPI_GROUP_COLS
     }
 
     ESP_LOGW("BMP", "H: before close file");
