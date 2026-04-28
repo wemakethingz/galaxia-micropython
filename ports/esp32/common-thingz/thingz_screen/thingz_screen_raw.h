@@ -11,7 +11,7 @@
 
 #include "freertos/queue.h"
 
-#define THINGZ_BMP_BLOCK_LINES   32
+#define THINGZ_BMP_BLOCK_LINES   8
 #define THINGZ_BMP_GROUP_COLS    8
 // Max block_buffer: BLOCK_LINES rows × max stride (screen_width × 4 bytes for 32bpp)
 #define THINGZ_BMP_BLOCK_BUF_SIZE  (THINGZ_BMP_BLOCK_LINES * MICROPY_THINGZ_SCREEN_WIDTH * 4)
