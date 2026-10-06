@@ -347,6 +347,79 @@ void thingz_screen_raw_clear_objects(thingz_screen_raw_t *raw){
     raw->head = NULL;
 }
 
+// ---- damage: what the current refresh drew or cleared ----
+
+static void _thingz_screen_raw_damage(thingz_screen_raw_t *raw, int16_t x0, int16_t y0, int16_t x1, int16_t y1){
+    if(x0 < 0) x0 = 0;
+    if(y0 < 0) y0 = 0;
+    if(x1 >= MICROPY_THINGZ_SCREEN_WIDTH) x1 = MICROPY_THINGZ_SCREEN_WIDTH - 1;
+    if(y1 >= MICROPY_THINGZ_SCREEN_HEIGHT) y1 = MICROPY_THINGZ_SCREEN_HEIGHT - 1;
+    if(x0 > x1 || y0 > y1){
+        return;
+    }
+    if(raw->damage_count < THINGZ_RAW_DAMAGE_MAX){
+        raw->damage[raw->damage_count++] = (thingz_screen_raw_area_t){x0, y0, x1, y1};
+    }else{
+        raw->damage_overflow = 1;
+    }
+}
+
+// Bounding box of the damaged parts of the area (x0,y0)-(x1,y1); false if none is damaged
+static bool _thingz_screen_raw_damaged_part(thingz_screen_raw_t *raw, int16_t x0, int16_t y0, int16_t x1, int16_t y1,
+                                            thingz_screen_raw_area_t *out){
+    if(raw->damage_overflow){
+        *out = (thingz_screen_raw_area_t){x0, y0, x1, y1};
+        return true;
+    }
+    bool any = false;
+    for(int i = 0; i < raw->damage_count; i++){
+        thingz_screen_raw_area_t d = raw->damage[i];
+        int16_t ix0 = d.x0 > x0 ? d.x0 : x0, iy0 = d.y0 > y0 ? d.y0 : y0;
+        int16_t ix1 = d.x1 < x1 ? d.x1 : x1, iy1 = d.y1 < y1 ? d.y1 : y1;
+        if(ix0 > ix1 || iy0 > iy1){
+            continue;
+        }
+        if(!any){
+            *out = (thingz_screen_raw_area_t){ix0, iy0, ix1, iy1};
+            any = true;
+        }else{
+            if(ix0 < out->x0) out->x0 = ix0;
+            if(iy0 < out->y0) out->y0 = iy0;
+            if(ix1 > out->x1) out->x1 = ix1;
+            if(iy1 > out->y1) out->y1 = iy1;
+        }
+    }
+    return any;
+}
+
+// Clear the part of the old area (sx, sy, w x h) that the same object at (nx, ny) no longer
+// covers: at most two strips, never outside the old area (a jump farther than the object's
+// size clears the old area only, not what lies between the two positions)
+static void _thingz_screen_raw_clear_vacated(thingz_screen_raw_t *raw, int16_t sx, int16_t sy, int16_t w, int16_t h,
+                                             int16_t nx, int16_t ny){
+    int16_t ex = sx + w - 1, ey = sy + h - 1;
+    if(nx > sx){
+        thingz_screen_raw_fill_rect(raw, sx, (nx - 1 < ex) ? nx - 1 : ex, sy, ey, 0);
+    }else if(nx < sx){
+        thingz_screen_raw_fill_rect(raw, (nx + w > sx) ? nx + w : sx, ex, sy, ey, 0);
+    }
+    if(ny > sy){
+        thingz_screen_raw_fill_rect(raw, sx, ex, sy, (ny - 1 < ey) ? ny - 1 : ey, 0);
+    }else if(ny < sy){
+        thingz_screen_raw_fill_rect(raw, sx, ex, (ny + h > sy) ? ny + h : sy, ey, 0);
+    }
+}
+
+// Part of the screen print_bmp draws (inclusive); the whole screen outside of a partial redraw
+static thingz_screen_raw_area_t bmp_clip = {0, 0, MICROPY_THINGZ_SCREEN_WIDTH - 1, MICROPY_THINGZ_SCREEN_HEIGHT - 1};
+
+static void _thingz_screen_raw_print_bmp_part(thingz_screen_raw_t *raw, thingz_display_raw_img_obj_t* img,
+                                              thingz_screen_raw_area_t part){
+    bmp_clip = part;
+    thingz_screen_raw_print_bmp(raw, img->x, img->y, img->path, img->white_replacement_color, 1);
+    bmp_clip = (thingz_screen_raw_area_t){0, 0, MICROPY_THINGZ_SCREEN_WIDTH - 1, MICROPY_THINGZ_SCREEN_HEIGHT - 1};
+}
+
 static uint8_t _thingz_screen_raw_refresh_image(thingz_screen_raw_t *raw, thingz_display_raw_img_obj_t* img, uint8_t force_refresh){
     uint8_t printed = 0;
     if(img->show){
@@ -450,8 +523,15 @@ static uint8_t _thingz_screen_raw_refresh_image(thingz_screen_raw_t *raw, thingz
                     }
                 }
             }
-            // TODO: If force_refresh but !image_changed, should redraw from cached bitmap
-            // For now, we accept that overlapping objects won't redraw this image
+            // Another object uncovered or overdrew part of this image (cleared its old place,
+            // or was drawn below it): redraw only that part
+            thingz_screen_raw_area_t part;
+            if(force_refresh && !image_changed && !x_offscreen && !y_offscreen
+               && _thingz_screen_raw_damaged_part(raw, img->x, img->y, img->x + img->bmp.width - 1,
+                                                  img->y + img->bmp.height - 1, &part)){
+                _thingz_screen_raw_print_bmp_part(raw, img, part);
+                printed = 1;
+            }
         }
         img->screen_x = img->x;
         img->screen_y = img->y;
@@ -816,6 +896,8 @@ static mp_obj_t mp_thingz_screen_raw_refresh(void* r){
     //   and unnecessary SPI writes. screen_show=0 causes the main pass to use the
     //   "first-time show" path which redraws at the new position without strip clearing.
     // For rectangles/texts: clear the full old area (fill_rect is cheap, no flash read).
+    raw->damage_count = 0;
+    raw->damage_overflow = 0;
     thingz_screen_raw_show_obj_t* obj = raw->head;
     while(obj != NULL) {
         obj->was_updated = 0;
@@ -840,24 +922,8 @@ static mp_obj_t mp_thingz_screen_raw_refresh(void* r){
                                                            img->screen_y, img->screen_y+img->bmp.height-1, 0);
                             } else {
                                 // Position changed: clear only the vacated strips
-                                if (dx > 0) {
-                                    thingz_screen_raw_fill_rect(&(thingz_screen.raw),
-                                        img->screen_x, img->x - 1,
-                                        img->screen_y, img->screen_y + img->bmp.height - 1, 0);
-                                } else if (dx < 0) {
-                                    thingz_screen_raw_fill_rect(&(thingz_screen.raw),
-                                        img->x + img->bmp.width, img->screen_x + img->bmp.width - 1,
-                                        img->screen_y, img->screen_y + img->bmp.height - 1, 0);
-                                }
-                                if (dy > 0) {
-                                    thingz_screen_raw_fill_rect(&(thingz_screen.raw),
-                                        img->screen_x, img->screen_x + img->bmp.width - 1,
-                                        img->screen_y, img->y - 1, 0);
-                                } else if (dy < 0) {
-                                    thingz_screen_raw_fill_rect(&(thingz_screen.raw),
-                                        img->screen_x, img->screen_x + img->bmp.width - 1,
-                                        img->y + img->bmp.height, img->screen_y + img->bmp.height - 1, 0);
-                                }
+                                _thingz_screen_raw_clear_vacated(raw, img->screen_x, img->screen_y,
+                                                                 img->bmp.width, img->bmp.height, img->x, img->y);
                             }
                             img->screen_show = 0;
                             obj->was_updated = 1;
@@ -872,8 +938,17 @@ static mp_obj_t mp_thingz_screen_raw_refresh(void* r){
                         || (rect->screen_width != rect->width) || (rect->screen_height != rect->height)
                         || (rect->screen_color != rect->color);
                     if (changed) {
-                        thingz_screen_raw_fill_rect(&(thingz_screen.raw), rect->screen_x, rect->screen_x+rect->screen_width-1,
-                                                   rect->screen_y, rect->screen_y+rect->screen_height-1, 0);
+                        uint8_t moved_only = rect->show && rect->screen_width == rect->width
+                            && rect->screen_height == rect->height && rect->screen_color == rect->color;
+                        if (moved_only) {
+                            // Same rectangle elsewhere: clear only what it no longer covers, as
+                            // for images (less SPI traffic, no black flash on the overlap)
+                            _thingz_screen_raw_clear_vacated(raw, rect->screen_x, rect->screen_y,
+                                                             rect->width, rect->height, rect->x, rect->y);
+                        } else {
+                            thingz_screen_raw_fill_rect(&(thingz_screen.raw), rect->screen_x, rect->screen_x+rect->screen_width-1,
+                                                       rect->screen_y, rect->screen_y+rect->screen_height-1, 0);
+                        }
                         rect->screen_show = 0;
                         obj->was_updated = 1;
                     }
@@ -938,11 +1013,12 @@ mp_uint_t thingz_screen_raw_write(thingz_screen_raw_t *raw, int16_t x, int16_t y
     if (!raw || !raw->screen) return size;  // Safety check
     if(x < 0 || x >= MICROPY_THINGZ_SCREEN_WIDTH || y < 0 || y >= MICROPY_THINGZ_SCREEN_HEIGHT) return size;
     thingz_screen_print_screen(buf, size, x, MICROPY_THINGZ_SCREEN_HEIGHT-1-y-raw->screen->params.font_height+1, RGB888_TO_RGB565(color), 1);
+    _thingz_screen_raw_damage(raw, x, y, x + raw->screen->params.font_width * size - 1, y + raw->screen->params.font_height - 1);
     return size;
 }
 
 thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int16_t x, int16_t y, const char *file, uint32_t white_replacement_color, uint8_t show){
-    ESP_LOGW("BMP", "A: start load %s", file);
+    ESP_LOGD("BMP", "A: start load %s", file);
     thingz_screen_bitmap_t bitmap;
     bitmap.shown = 0;
     mp_obj_t args[] = {
@@ -950,9 +1026,9 @@ thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int
         mp_obj_new_str("rb", 2),
     };
     uint16_t bmp_header[69];
-    ESP_LOGW("BMP", "B: before vfs_open");
+    ESP_LOGD("BMP", "B: before vfs_open");
     pyb_file_obj_t* f = mp_vfs_open(2, args, &mp_const_empty_map);
-    ESP_LOGW("BMP", "C: after vfs_open");
+    ESP_LOGD("BMP", "C: after vfs_open");
     bitmap.file = f;
     
     f_rewind(&f->fp);
@@ -1069,20 +1145,24 @@ thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int
         }
         bool rotation = true;
 
-        // Calculate which rows to draw (for clipping in X)
-        int row_start = (x < 0) ? -x : 0;
-        int row_end = (x + bitmap.width > MICROPY_THINGZ_SCREEN_WIDTH) ? MICROPY_THINGZ_SCREEN_WIDTH - x : bitmap.width;
+        // Calculate which rows to draw (for clipping in X): the screen, and bmp_clip for a
+        // partial redraw
+        int row_start = (x < bmp_clip.x0) ? bmp_clip.x0 - x : 0;
+        int row_end = (x + bitmap.width > bmp_clip.x1 + 1) ? bmp_clip.x1 + 1 - x : bitmap.width;
 
         // Calculate visible height for clipping in Y (with rotation, Y maps to LCD X)
-        int16_t visible_y_start = (y < 0) ? 0 : y;
-        int16_t visible_y_end = (y + bitmap.height > MICROPY_THINGZ_SCREEN_HEIGHT) ? MICROPY_THINGZ_SCREEN_HEIGHT : y + bitmap.height;
+        int16_t visible_y_start = (y < bmp_clip.y0) ? bmp_clip.y0 : y;
+        int16_t visible_y_end = (y + bitmap.height > bmp_clip.y1 + 1) ? bmp_clip.y1 + 1 : y + bitmap.height;
         int16_t visible_height = visible_y_end - visible_y_start;
-        int16_t y_offset = (y < 0) ? -y : 0;  // Offset into bitmap if partially off top
+        int16_t y_offset = visible_y_start - y;  // Offset into bitmap of the first drawn row
 
-        if(visible_height <= 0) {
-            // No visible portion in Y
+        if(visible_height <= 0 || row_start >= row_end) {
+            // Nothing to draw
+            f_close(&f->fp);
+            if (bitmap.palette) m_free(bitmap.palette);
             return bitmap;
         }
+        _thingz_screen_raw_damage(raw, x + row_start, visible_y_start, x + row_end - 1, visible_y_end - 1);
 
         // Guard: pre-allocated block buffer covers images up to screen_width wide.
         // Skip rendering if the image stride exceeds the buffer (image too wide for screen).
@@ -1227,11 +1307,9 @@ thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int
 
             if (thingz_screen.dev._model == 0x7735) {
                 spi_master_write_comm_byte(&(thingz_screen.dev), 0x2A);
-                spi_master_write_data_word(&(thingz_screen.dev), lcd_x1);
-                spi_master_write_data_word(&(thingz_screen.dev), lcd_x2);
+                spi_master_write_addr(&(thingz_screen.dev), lcd_x1, lcd_x2);
                 spi_master_write_comm_byte(&(thingz_screen.dev), 0x2B);
-                spi_master_write_data_word(&(thingz_screen.dev), lcd_y1);
-                spi_master_write_data_word(&(thingz_screen.dev), lcd_y2);
+                spi_master_write_addr(&(thingz_screen.dev), lcd_y1, lcd_y2);
                 spi_master_write_comm_byte(&(thingz_screen.dev), 0x2C);
 
                 // Send async with DMA
@@ -1252,15 +1330,15 @@ thingz_screen_bitmap_t thingz_screen_raw_print_bmp(thingz_screen_raw_t *raw, int
             thingz_screen.pendingTrans = NULL;
         }
 
-        ESP_LOGW("BMP", "G: render complete");
+        ESP_LOGD("BMP", "G: render complete");
 
     }
 
-    ESP_LOGW("BMP", "H: before close file");
+    ESP_LOGD("BMP", "H: before close file");
     f_close(&f->fp);
     if(bitmap.palette)
         m_free(bitmap.palette);
-    ESP_LOGW("BMP", "I: done load");
+    ESP_LOGD("BMP", "I: done load");
 
     return bitmap;
 // //     // read bmp header
@@ -1382,6 +1460,7 @@ void thingz_screen_raw_fill_rect(thingz_screen_raw_t* raw, int16_t x, int16_t x2
 
     // Ensure proper ordering and valid rectangle
     if(x > x2 || y > y2 || x >= MICROPY_THINGZ_SCREEN_WIDTH || y >= MICROPY_THINGZ_SCREEN_HEIGHT) return;
+    _thingz_screen_raw_damage(raw, x, y, x2, y2);
 
     bool rotation = true;
     lcdDrawFillRect(&(thingz_screen.dev), rotation ? MICROPY_THINGZ_SCREEN_HEIGHT-1-y2 :x , rotation ? x : y, rotation ? MICROPY_THINGZ_SCREEN_HEIGHT-1-y : x2, rotation ? x2 : y2, color);

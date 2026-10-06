@@ -24,7 +24,7 @@ void thingz_screen_repl_init(thingz_screen_repl_t *repl, thingz_screen_obj_t *sc
     repl->last_cursor_y = repl->cursor_y;
 
     repl->screen = screen;
-
+    thingz_screen_repl_invalidate(repl);
 }
 
 void thingz_screen_repl_enter(){
@@ -36,6 +36,15 @@ void thingz_screen_repl_exit(){
 
 }
 
+static inline void _thingz_screen_repl_dirty(thingz_screen_repl_t *repl, int line){
+    __atomic_fetch_or(&repl->dirty_lines, 1u << line, __ATOMIC_RELAXED);
+}
+
+// Everything must be redrawn (screen cleared, every line changed)
+void thingz_screen_repl_invalidate(thingz_screen_repl_t *repl){
+    __atomic_store_n(&repl->dirty_lines, 0xffffffffu, __ATOMIC_RELAXED);
+}
+
 static void _thingz_screen_repl_scroll(thingz_screen_repl_t *repl){
     if(repl->cursor_y < 0){
         repl->cursor_y = 0;
@@ -45,7 +54,7 @@ static void _thingz_screen_repl_scroll(thingz_screen_repl_t *repl){
                 repl->data[i][j] = repl->data[i-1][j];
             }
         }
-        
+        thingz_screen_repl_invalidate(repl);
     }
 }
 
@@ -57,7 +66,12 @@ void thingz_screen_repl_refresh(thingz_screen_repl_t *repl){
 
     // uint8_t str[repl->dataColumns*5];
     // uint8_t index = 0;
+    // Taken before drawing: a line written meanwhile is drawn again at the next refresh
+    uint32_t dirty = __atomic_exchange_n(&repl->dirty_lines, 0, __ATOMIC_RELAXED);
     for(int i = 0; i < repl->dataLines; i++){
+        if(!(dirty & (1u << i))){
+            continue;
+        }
         // index = 0;
         // for(int j = 0; j < repl->dataColumns; j++){
         //     if( repl->data[i][j] > 0x7f){
@@ -97,6 +111,7 @@ mp_uint_t thingz_screen_repl_write(thingz_screen_repl_t *repl, const void *buf, 
                     for (uint16_t j = repl->cursor_x; j < repl->dataColumns; j++) {
                         repl->data[repl->cursor_y][j] = 0xff;
                     }
+                    _thingz_screen_repl_dirty(repl, repl->cursor_y);
                     i += 2;
                 } else {
                     // Handle commands of the form \x1b[####D
@@ -130,6 +145,7 @@ mp_uint_t thingz_screen_repl_write(thingz_screen_repl_t *repl, const void *buf, 
                                     repl->data[y][x] = 0xff;
                                 }
                             }
+                            thingz_screen_repl_invalidate(repl);
                         }
                     }
                     if (c == ';') {
@@ -176,6 +192,7 @@ mp_uint_t thingz_screen_repl_write(thingz_screen_repl_t *repl, const void *buf, 
                 }
             }
             repl->data[repl->cursor_y][repl->cursor_x] = font_get_glyph_index(c);//0xe9;
+            _thingz_screen_repl_dirty(repl, repl->cursor_y);
             repl->cursor_x++;
         }
 

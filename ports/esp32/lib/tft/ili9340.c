@@ -252,6 +252,20 @@ bool spi_master_write_colors(TFT_t * dev, uint16_t * colors, uint16_t size)
 	return spi_master_write_byte( dev->_TFT_Handle, Byte, size*2);
 }
 
+// Send `size` bytes already in the screen's byte order from a DMA-capable buffer, without
+// copying them: one transfer per DMA chunk (4092 bytes) instead of one per 1 KB copy.
+bool spi_master_write_bytes_dma(TFT_t * dev, const uint8_t * bytes, size_t size)
+{
+	gpio_set_level( dev->_dc, SPI_Data_Mode );
+	while (size > 0) {
+		size_t n = size > 4092 ? 4092 : size;
+		spi_master_write_byte( dev->_TFT_Handle, bytes, n );
+		bytes += n;
+		size -= n;
+	}
+	return true;
+}
+
 // Async version for double buffering - buffer must be DMA capable and remain valid until transaction completes
 // trans_struct must be a pre-allocated spi_transaction_t structure that remains valid until the transaction completes
 bool spi_master_write_colors_async(TFT_t * dev, uint8_t * byte_buffer, uint16_t size, spi_transaction_t* trans_struct)
@@ -668,11 +682,9 @@ void lcdDrawMultiPixels(TFT_t * dev, uint16_t x, uint16_t y, uint16_t size, uint
 
 	if (dev->_model == 0x7735) {
 		spi_master_write_comm_byte(dev, 0x2A);	// set column(x) address
-		spi_master_write_data_word(dev, _x1);
-		spi_master_write_data_word(dev, _x2);
+		spi_master_write_addr(dev, _x1, _x2);
 		spi_master_write_comm_byte(dev, 0x2B);	// set Page(y) address
-		spi_master_write_data_word(dev, _y1);
-		spi_master_write_data_word(dev, _y2);
+		spi_master_write_addr(dev, _y1, _y2);
 		spi_master_write_comm_byte(dev, 0x2C);	// Memory Write
 		spi_master_write_colors(dev, colors, size);
 	} // 0x7735
@@ -735,15 +747,17 @@ void lcdDrawFillRect(TFT_t * dev, uint16_t x1, uint16_t y1, uint16_t x2, uint16_
 
 	if (dev->_model == 0x7735) {
 		spi_master_write_comm_byte(dev, 0x2A);	// set column(x) address
-		spi_master_write_data_word(dev, _x1);
-		spi_master_write_data_word(dev, _x2);
+		spi_master_write_addr(dev, _x1, _x2);
 		spi_master_write_comm_byte(dev, 0x2B);	// set Page(y) address
-		spi_master_write_data_word(dev, _y1);
-		spi_master_write_data_word(dev, _y2);
+		spi_master_write_addr(dev, _y1, _y2);
 		spi_master_write_comm_byte(dev, 0x2C);	// Memory Write
-		for(int i=_x1;i<=_x2;i++) {
-			uint16_t size = _y2-_y1+1;
+		// A solid fill: the pixels go by blocks of 512 (the size of write_color's buffer),
+		// not one transfer per column
+		uint32_t left = (uint32_t)(_x2-_x1+1) * (_y2-_y1+1);
+		while (left > 0) {
+			uint16_t size = left > 512 ? 512 : left;
 			spi_master_write_color(dev, color, size);
+			left -= size;
 		}
 	} // 0x7735
 

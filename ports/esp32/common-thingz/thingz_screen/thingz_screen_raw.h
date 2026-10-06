@@ -20,6 +20,13 @@
 
 typedef struct thingz_screen_obj thingz_screen_obj_t;
 
+// Screen areas drawn or cleared during one refresh (inclusive screen coordinates). An image
+// that another object uncovered or overdrew redraws only its part inside these areas.
+#define THINGZ_RAW_DAMAGE_MAX 8
+typedef struct {
+    int16_t x0, y0, x1, y1;
+} thingz_screen_raw_area_t;
+
 typedef struct _thingz_screen_raw_show_obj_t {
 	mp_obj_t show_obj;
     uint8_t was_updated;
@@ -45,6 +52,9 @@ typedef struct{
     QueueHandle_t transfer_queue;
     uint8_t*  bmp_block_buffer;   // pre-allocated BMP line read buffer (THINGZ_BMP_BLOCK_BUF_SIZE bytes)
     uint16_t* bmp_output_buffer;  // pre-allocated column output buffer (THINGZ_BMP_OUTPUT_BUF_SIZE uint16_t)
+    thingz_screen_raw_area_t damage[THINGZ_RAW_DAMAGE_MAX];
+    uint8_t damage_count;
+    uint8_t damage_overflow;      // more areas than damage[] holds: the whole screen counts as damaged
 } thingz_screen_raw_t;
 
 typedef struct {

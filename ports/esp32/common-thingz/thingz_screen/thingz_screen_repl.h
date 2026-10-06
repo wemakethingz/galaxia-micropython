@@ -22,11 +22,16 @@ typedef struct{
     uint8_t offsetx;
     uint8_t offsety;
 
+    // One bit per line of data[] changed since the last refresh: only those lines are sent
+    // to the screen (written by the MicroPython task, read by the refresh task: atomic).
+    volatile uint32_t dirty_lines;
+
     thingz_screen_obj_t *screen;
 } thingz_screen_repl_t;
 
 void thingz_screen_repl_init(thingz_screen_repl_t *repl, thingz_screen_obj_t *screen);
 void thingz_screen_repl_refresh(thingz_screen_repl_t *repl);
+void thingz_screen_repl_invalidate(thingz_screen_repl_t *repl);
 mp_uint_t thingz_screen_repl_write(thingz_screen_repl_t *repl, const void *buf, mp_uint_t size, int *errcode);
 void thingz_screen_repl_enter();
 void thingz_screen_repl_exit();

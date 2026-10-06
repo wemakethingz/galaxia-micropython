@@ -1558,6 +1558,9 @@ void thingz_screen_print_screen_with_glyp_index(uint8_t* str, uint32_t len, uint
         return;
     }
 
+    // lineData holds the pixels in the screen's byte order (big-endian RGB565), so that it is
+    // sent as is, straight from this DMA-capable buffer
+    uint16_t fg = __builtin_bswap16(foreground);
     uint8_t cpt = 0;
     while(cpt <  len){
 
@@ -1579,7 +1582,7 @@ void thingz_screen_print_screen_with_glyp_index(uint8_t* str, uint32_t len, uint
         */
         for(int k = 0; k < thingz_screen.params.font_width; k++){
             for(int l = 0; l < thingz_screen.params.font_height; l++){
-                thingz_screen.lineData[thingz_screen.params.font_width*thingz_screen.params.font_height*cpt+k*thingz_screen.params.font_height+l] = glyph[k*thingz_screen.params.font_height+l] == 1 ? foreground : 0; 
+                thingz_screen.lineData[thingz_screen.params.font_width*thingz_screen.params.font_height*cpt+k*thingz_screen.params.font_height+l] = glyph[k*thingz_screen.params.font_height+l] == 1 ? fg : 0; 
             }
         }
 
@@ -1588,21 +1591,19 @@ void thingz_screen_print_screen_with_glyp_index(uint8_t* str, uint32_t len, uint
     }
 
     spi_master_write_comm_byte(&(thingz_screen.dev), 0x2A);	// set column(x) address
-    spi_master_write_data_word(&(thingz_screen.dev), thingz_screen.params.offsetx+y);
-    spi_master_write_data_word(&(thingz_screen.dev), y+(thingz_screen.params.font_height+thingz_screen.params.offsetx-1));
+    spi_master_write_addr(&(thingz_screen.dev), thingz_screen.params.offsetx+y,
+                          y+(thingz_screen.params.font_height+thingz_screen.params.offsetx-1));
     spi_master_write_comm_byte(&(thingz_screen.dev), 0x2B);	// set Page(y) address
-    spi_master_write_data_word(&(thingz_screen.dev), thingz_screen.params.offsety+x);
-    spi_master_write_data_word(&(thingz_screen.dev), thingz_screen.params.font_width*cpt+thingz_screen.params.offsety+x-1);
+    spi_master_write_addr(&(thingz_screen.dev), thingz_screen.params.offsety+x,
+                          thingz_screen.params.font_width*cpt+thingz_screen.params.offsety+x-1);
 
     spi_master_write_comm_byte(&(thingz_screen.dev), 0x2C);	// Memory Write
     uint32_t end = thingz_screen.params.font_width*thingz_screen.params.font_height*cpt;
-    for(int j = 0; j < end; j+=500){
-        uint16_t s = end-j > 500 ? 500 : end-j;
-        spi_master_write_colors(&(thingz_screen.dev), thingz_screen.lineData+j, s);
-    }
+    spi_master_write_bytes_dma(&(thingz_screen.dev), (uint8_t*)thingz_screen.lineData, end * sizeof(uint16_t));
 }
 
 void thingz_screen_print_screen(uint8_t* str, uint32_t len, uint32_t x, uint32_t y, uint16_t foreground, uint8_t utf8){
+    uint16_t fg = __builtin_bswap16(foreground);    // screen byte order, see print_screen_with_glyp_index
     uint8_t* i = str;
     uint8_t cpt = 0;
     while(i < str + len){
@@ -1629,7 +1630,7 @@ void thingz_screen_print_screen(uint8_t* str, uint32_t len, uint32_t x, uint32_t
             for(int l = 0; l < thingz_screen.params.font_height; l++){
 				uint16_t index = thingz_screen.params.font_width*thingz_screen.params.font_height*cpt+k*thingz_screen.params.font_height+l;
 				if( index < thingz_screen.lineDataSize)
-                	thingz_screen.lineData[index] = glyph[k*thingz_screen.params.font_height+l] == 1 ? foreground : 0; 
+                	thingz_screen.lineData[index] = glyph[k*thingz_screen.params.font_height+l] == 1 ? fg : 0; 
             }
         }
 
@@ -1638,21 +1639,18 @@ void thingz_screen_print_screen(uint8_t* str, uint32_t len, uint32_t x, uint32_t
     }
 
     spi_master_write_comm_byte(&(thingz_screen.dev), 0x2A);	// set column(x) address
-    spi_master_write_data_word(&(thingz_screen.dev), thingz_screen.params.offsetx+y);
-    spi_master_write_data_word(&(thingz_screen.dev), y+(thingz_screen.params.font_height+thingz_screen.params.offsetx-1));
+    spi_master_write_addr(&(thingz_screen.dev), thingz_screen.params.offsetx+y,
+                          y+(thingz_screen.params.font_height+thingz_screen.params.offsetx-1));
     spi_master_write_comm_byte(&(thingz_screen.dev), 0x2B);	// set Page(y) address
-    spi_master_write_data_word(&(thingz_screen.dev), thingz_screen.params.offsety+x);
-    spi_master_write_data_word(&(thingz_screen.dev), thingz_screen.params.font_width*cpt+thingz_screen.params.offsety+x-1);
+    spi_master_write_addr(&(thingz_screen.dev), thingz_screen.params.offsety+x,
+                          thingz_screen.params.font_width*cpt+thingz_screen.params.offsety+x-1);
 
     spi_master_write_comm_byte(&(thingz_screen.dev), 0x2C);	// Memory Write
     uint32_t end = thingz_screen.params.font_width*thingz_screen.params.font_height*cpt;
 	if(end > thingz_screen.lineDataSize){
 		end = thingz_screen.lineDataSize;
 	}
-    for(int j = 0; j < end; j+=500){
-        uint16_t s = end-j > 500 ? 500 : end-j;
-        spi_master_write_colors(&(thingz_screen.dev), thingz_screen.lineData+j, s);
-    }
+    spi_master_write_bytes_dma(&(thingz_screen.dev), (uint8_t*)thingz_screen.lineData, end * sizeof(uint16_t));
 
 }
 
@@ -1728,6 +1726,7 @@ void thingz_screen_print_header(const char* filename){
 void thingz_screen_clear(){
     xSemaphoreTake(controlLcd, portMAX_DELAY);
     lcdFillScreen(&thingz_screen.dev, BLACK);
+    thingz_screen_repl_invalidate(&thingz_screen.repl);    // the REPL text must be drawn again
     xSemaphoreGive(controlLcd);
 }
 
