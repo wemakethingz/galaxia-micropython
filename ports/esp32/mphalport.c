@@ -192,31 +192,92 @@ uint32_t mp_hal_ticks_us(void) {
     return esp_timer_get_time();
 }
 
+// The last part of a delay is busy-waited, to keep sleep_ms accurate to a few microseconds:
+// the timer wakes the task this long before the end, which covers the wake-up latency
+// (timer task, then switch to this task). Busy-waiting at most this long instead of up to
+// a whole FreeRTOS tick (10 ms at 100 Hz) is what saves the CPU time.
+#define MP_HAL_DELAY_BUSY_WAIT_US (500)
+
+// One-shot timer that wakes the sleeping task shortly before the end of a delay, so that
+// the part of a delay shorter than a FreeRTOS tick (10 ms at 100 Hz) is not busy-waited.
+static esp_timer_handle_t mp_hal_delay_timer;
+static TaskHandle_t mp_hal_delay_task;
+
+static void mp_hal_delay_timer_cb(void *arg) {
+    xTaskNotifyGive(mp_hal_delay_task);
+}
+
+// Arm the timer to notify the calling task in `us` microseconds. Called with the GIL held,
+// which serializes threads; returns false if another thread's delay is using the timer.
+static bool mp_hal_delay_timer_arm(uint64_t us) {
+    if (mp_hal_delay_timer == NULL) {
+        const esp_timer_create_args_t args = {
+            .callback = mp_hal_delay_timer_cb,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "mp_delay",
+        };
+        if (esp_timer_create(&args, &mp_hal_delay_timer) != ESP_OK) {
+            return false;
+        }
+    }
+    TaskHandle_t self = xTaskGetCurrentTaskHandle();
+    if (esp_timer_is_active(mp_hal_delay_timer)) {
+        if (mp_hal_delay_task != self) {
+            return false;
+        }
+        esp_timer_stop(mp_hal_delay_timer);         // ours (woken early by an event): re-arm
+    }
+    mp_hal_delay_task = self;
+    return esp_timer_start_once(mp_hal_delay_timer, us) == ESP_OK;
+}
+
+// Disarm the timer if it is still running for this task, so that it does not wake a later delay
+static void mp_hal_delay_timer_disarm(void) {
+    if (mp_hal_delay_timer != NULL && esp_timer_is_active(mp_hal_delay_timer)
+        && mp_hal_delay_task == xTaskGetCurrentTaskHandle()) {
+        esp_timer_stop(mp_hal_delay_timer);
+    }
+}
+
 void mp_hal_delay_ms(uint32_t ms) {
     uint64_t us = (uint64_t)ms * 1000ULL;
-    uint64_t dt;
     uint64_t t0 = esp_timer_get_time();
+    bool yielded = false;
     for (;;) {
         mp_handle_pending(true);
         MICROPY_PY_SOCKET_EVENTS_HANDLER
-        MP_THREAD_GIL_EXIT();
-        uint64_t t1 = esp_timer_get_time();
-        dt = t1 - t0;
-        if (dt + portTICK_PERIOD_MS * 1000ULL >= us) {
-            // doing a vTaskDelay would take us beyond requested delay time
+        uint64_t dt = esp_timer_get_time() - t0;
+        if (dt >= us && yielded) {
+            mp_hal_delay_timer_disarm();
+            break;
+        }
+        uint64_t left = dt < us ? us - dt : 0;
+        if (left < MP_HAL_DELAY_BUSY_WAIT_US) {
+            // Always yield at least once, then finish the delay accurately
+            MP_THREAD_GIL_EXIT();
             taskYIELD();
             MP_THREAD_GIL_ENTER();
-            t1 = esp_timer_get_time();
-            dt = t1 - t0;
+            yielded = true;
+            mp_hal_delay_timer_disarm();
+            if (left > 0) {
+                mp_hal_delay_us(left);
+            }
             break;
-        } else {
-            ulTaskNotifyTake(pdFALSE, 1);
-            MP_THREAD_GIL_ENTER();
         }
-    }
-    if (dt < us) {
-        // do the remaining delay accurately
-        mp_hal_delay_us(us - dt);
+        if (left >= portTICK_PERIOD_MS * 1000ULL || !mp_hal_delay_timer_arm(left - MP_HAL_DELAY_BUSY_WAIT_US)) {
+            // Sleep one tick (or until woken by an event); if the timer is taken by another
+            // thread, sleep one tick at most past the end of the delay
+            MP_THREAD_GIL_EXIT();
+            ulTaskNotifyTake(pdFALSE, 1);
+        } else {
+            // Less than a tick left: sleep until the timer (or an event) wakes us, shortly
+            // before the end. The tick timeout is a safety net; a spurious or late
+            // notification only costs one more loop.
+            MP_THREAD_GIL_EXIT();
+            ulTaskNotifyTake(pdFALSE, 2);
+        }
+        MP_THREAD_GIL_ENTER();
+        yielded = true;
     }
 }
 
