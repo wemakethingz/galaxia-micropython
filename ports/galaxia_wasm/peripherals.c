@@ -1,0 +1,709 @@
+// Peripherals of the Galaxia below the Thingz modules, for the WebAssembly build
+// (declarations in idf/idf_periph.h). The Thingz drivers run unchanged on top:
+//   - touch sensor: pads N/S/E/W (GPIO 8, 4, 5, 9), touched from the page;
+//   - I2C0: LIS2DH12 accelerometer (0x19) and QMC6310 magnetometer (0x1C), the
+//     register models of galaxia_sim's QEMU machine (hw/sensor/ in patches/);
+//   - LEDC: the RGB LED (GPIO 41/40/39, common 10), shown by the page; its light
+//     measurement (LED discharge timed through ADC1 channel 9) follows the light
+//     level set in the page;
+//   - DAC: the sound, as the waveform the firmware writes, played by the page;
+//   - ESP-NOW: broadcast between the boards of the same browser (BroadcastChannel).
+// The page sets the inputs through the galaxia_set_* functions and the input queues
+// of library.js; peripherals_poll() delivers them from idf_shim_poll().
+
+#include <math.h>
+#include <string.h>
+#include <emscripten.h>
+
+#include "py/runtime.h"
+#include "idf/idf_all.h"
+#include "peripherals.h"
+
+extern int galaxia_js_touch_get(int pad);
+extern int galaxia_js_touch_next_changed(void);
+extern int galaxia_js_light(void);
+extern void galaxia_js_led(int r, int g, int b);
+extern void galaxia_js_sound_loop(int rate, const uint8_t *samples, int len);
+extern void galaxia_js_sound_chunk(int rate, const uint8_t *samples, int len);
+extern void galaxia_js_sound_stop(void);
+extern void galaxia_js_radio_send(int channel, const uint8_t *mac, const uint8_t *data, int len);
+extern int galaxia_js_radio_next(uint8_t *data, int max, uint8_t *mac, int *channel);
+extern void galaxia_js_mac(uint8_t *mac);
+extern void galaxia_js_sleep(int ms);
+
+#define BIT(n) (1u << (n))
+
+// ======================================================================== touch
+
+#define TOUCH_BENCHMARK 20000           // raw count of an untouched pad
+#define TOUCH_TOUCHED   40000           // touched: well over benchmark + threshold
+
+static intr_handler_t touch_isr;
+static void *touch_isr_arg;
+static touch_pad_t touch_current;
+static uint32_t touch_configured;       // pads configured by touch_pad_config
+
+static bool touched(touch_pad_t pad) {
+    return (touch_configured & BIT(pad)) && galaxia_js_touch_get(pad);
+}
+
+esp_err_t touch_pad_init(void) { return ESP_OK; }
+esp_err_t touch_pad_deinit(void) { return ESP_OK; }
+esp_err_t touch_pad_reset(void) { return ESP_OK; }
+esp_err_t touch_pad_denoise_set_config(const touch_pad_denoise_t *cfg) { return ESP_OK; }
+esp_err_t touch_pad_denoise_enable(void) { return ESP_OK; }
+esp_err_t touch_pad_filter_set_config(const touch_filter_config_t *cfg) { return ESP_OK; }
+esp_err_t touch_pad_filter_enable(void) { return ESP_OK; }
+esp_err_t touch_pad_timeout_set(bool enable, uint32_t threshold) { return ESP_OK; }
+esp_err_t touch_pad_intr_enable(touch_pad_intr_mask_t mask) { return ESP_OK; }
+esp_err_t touch_pad_set_fsm_mode(touch_fsm_mode_t mode) { return ESP_OK; }
+esp_err_t touch_pad_fsm_start(void) { return ESP_OK; }
+esp_err_t touch_pad_fsm_stop(void) { return ESP_OK; }
+esp_err_t touch_pad_set_thresh(touch_pad_t pad, uint32_t threshold) { return ESP_OK; }
+
+esp_err_t touch_pad_config(touch_pad_t pad) {
+    if (pad < 0 || pad > 14) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    touch_configured |= BIT(pad);
+    return ESP_OK;
+}
+
+esp_err_t touch_pad_isr_register(intr_handler_t fn, void *arg, touch_pad_intr_mask_t mask) {
+    touch_isr = fn;
+    touch_isr_arg = arg;
+    return ESP_OK;
+}
+
+esp_err_t touch_pad_read_benchmark(touch_pad_t pad, uint32_t *value) {
+    *value = TOUCH_BENCHMARK;
+    return ESP_OK;
+}
+
+esp_err_t touch_pad_filter_read_smooth(touch_pad_t pad, uint32_t *value) {
+    *value = touched(pad) ? TOUCH_TOUCHED : TOUCH_BENCHMARK;
+    return ESP_OK;
+}
+
+esp_err_t touch_pad_read_raw_data(touch_pad_t pad, uint32_t *value) {
+    return touch_pad_filter_read_smooth(pad, value);
+}
+
+uint32_t touch_pad_get_status(void) {
+    uint32_t status = 0;
+    for (touch_pad_t pad = 0; pad < 15; pad++) {
+        if (touched(pad)) {
+            status |= BIT(pad);
+        }
+    }
+    return status;
+}
+
+touch_pad_t touch_pad_get_current_meas_channel(void) {
+    return touch_current;
+}
+
+// A pad changed: the sensor raises its active/inactive interrupt for that channel
+static void touch_poll(void) {
+    int pad;
+    while ((pad = galaxia_js_touch_next_changed()) >= 0) {
+        if (touch_isr && (touch_configured & BIT(pad))) {
+            touch_current = pad;
+            touch_isr(touch_isr_arg);
+        }
+    }
+}
+
+// ========================================================================== I2C
+
+// --- LIS2DH12 accelerometer (galaxia_sim hw/sensor/lis2dh12.c) ---
+#define LIS_WHO_AM_I    0x0F
+#define LIS_CTRL_REG1   0x20
+#define LIS_CTRL_REG4   0x23
+#define LIS_CTRL_REG5   0x24
+#define LIS_STATUS      0x27
+#define LIS_OUT_X_L     0x28
+#define LIS_OUT_Z_H     0x2D
+#define LIS_AUTOINC     0x80
+
+static struct {
+    uint8_t regs[0x40];
+    uint8_t pointer;
+    bool pointer_set;
+    int32_t mg[3];          // acceleration, milli-g, chip axes
+} lis = { .regs = { [LIS_CTRL_REG1] = 0x07 }, .mg = { 0, 0, 1000 } };
+
+static int16_t lis_output(int axis) {
+    static const int hr[] = { 1, 2, 4, 12 }, nm[] = { 4, 8, 16, 48 }, lp[] = { 16, 32, 64, 192 };
+    const int fs = (lis.regs[LIS_CTRL_REG4] >> 4) & 3;
+    int sens, shift;
+    if (lis.regs[LIS_CTRL_REG1] & BIT(3)) {
+        sens = lp[fs];
+        shift = 8;
+    } else if (lis.regs[LIS_CTRL_REG4] & BIT(3)) {
+        sens = hr[fs];
+        shift = 4;
+    } else {
+        sens = nm[fs];
+        shift = 6;
+    }
+    const int limit = (1 << (15 - shift)) - 1;
+    int digits = lis.mg[axis] / sens;
+    digits = digits < -limit - 1 ? -limit - 1 : digits > limit ? limit : digits;
+    return (int16_t)(digits * (1 << shift));
+}
+
+static uint8_t lis_read_reg(uint8_t reg) {
+    if (reg == LIS_WHO_AM_I) {
+        return 0x33;
+    }
+    if (reg == LIS_STATUS) {
+        return 0x0f;        // ZYXDA and X/Y/Z data available
+    }
+    if (reg >= LIS_OUT_X_L && reg <= LIS_OUT_Z_H) {
+        const int16_t v = lis_output((reg - LIS_OUT_X_L) / 2);
+        return (reg & 1) ? (uint8_t)(v >> 8) : (uint8_t)v;
+    }
+    return reg < sizeof(lis.regs) ? lis.regs[reg] : 0;
+}
+
+static void lis_start(void) {
+    lis.pointer_set = false;
+}
+
+static uint8_t lis_rx(void) {
+    const uint8_t reg = lis.pointer & ~LIS_AUTOINC;
+    const uint8_t v = lis_read_reg(reg);
+    if (lis.pointer & LIS_AUTOINC) {
+        lis.pointer = LIS_AUTOINC | ((reg + 1) & 0x7f);
+    }
+    return v;
+}
+
+static void lis_tx(uint8_t data) {
+    if (!lis.pointer_set) {
+        lis.pointer = data;
+        lis.pointer_set = true;
+        return;
+    }
+    const uint8_t reg = lis.pointer & ~LIS_AUTOINC;
+    if (reg < sizeof(lis.regs)) {
+        if (reg == LIS_CTRL_REG5) {
+            data &= ~BIT(7);    // BOOT: done at once
+        }
+        lis.regs[reg] = data;
+    }
+    if (lis.pointer & LIS_AUTOINC) {
+        lis.pointer = LIS_AUTOINC | ((reg + 1) & 0x7f);
+    }
+}
+
+// --- QMC6310 magnetometer (galaxia_sim hw/sensor/qmc6310.c) ---
+#define QMC_CHIP_ID     0x00
+#define QMC_X_LSB       0x01
+#define QMC_Z_MSB       0x06
+#define QMC_STATUS      0x09
+#define QMC_CTRL1       0x0A
+#define QMC_CTRL2       0x0B
+
+static struct {
+    uint8_t regs[0x30];
+    uint8_t pointer;
+    bool pointer_set;
+    int32_t mgauss[3];      // field, milligauss, chip axes
+} qmc = { .mgauss = { 0, 300, -400 } };   // heading 0 (thingz.compass.heading() = atan2(x, y))
+
+static int16_t qmc_output(int axis, bool *ovfl) {
+    static const int lsb_per_4mg[] = { 4, 10, 15, 60 };
+    const int64_t v = (int64_t)qmc.mgauss[axis] * lsb_per_4mg[(qmc.regs[QMC_CTRL2] >> 2) & 3] / 4;
+    if (v > INT16_MAX || v < INT16_MIN) {
+        *ovfl = true;
+        return v > 0 ? INT16_MAX : INT16_MIN;
+    }
+    return (int16_t)v;
+}
+
+static uint8_t qmc_read_reg(uint8_t reg) {
+    bool ovfl = false;
+    if (reg == QMC_CHIP_ID) {
+        return 0x80;
+    }
+    if (reg >= QMC_X_LSB && reg <= QMC_Z_MSB) {
+        const int16_t v = qmc_output((reg - QMC_X_LSB) / 2, &ovfl);
+        return (reg - QMC_X_LSB) & 1 ? (uint8_t)(v >> 8) : (uint8_t)v;
+    }
+    if (reg == QMC_STATUS) {
+        uint8_t st = (qmc.regs[QMC_CTRL1] & 3) ? 1 : 0;    // DRDY unless suspended
+        for (int i = 0; i < 3; i++) {
+            qmc_output(i, &ovfl);
+        }
+        return st | (ovfl ? 2 : 0);
+    }
+    return reg < sizeof(qmc.regs) ? qmc.regs[reg] : 0;
+}
+
+static void qmc_start(void) {
+    qmc.pointer_set = false;
+}
+
+static uint8_t qmc_rx(void) {
+    const uint8_t v = qmc_read_reg(qmc.pointer);
+    qmc.pointer = (qmc.pointer + 1) % sizeof(qmc.regs);
+    return v;
+}
+
+static void qmc_tx(uint8_t data) {
+    if (!qmc.pointer_set) {
+        qmc.pointer = data % sizeof(qmc.regs);
+        qmc.pointer_set = true;
+        return;
+    }
+    if (qmc.pointer == QMC_CTRL2 && (data & BIT(7))) {
+        memset(qmc.regs, 0, sizeof(qmc.regs));      // soft reset
+    } else {
+        qmc.regs[qmc.pointer] = data;
+    }
+    qmc.pointer = (qmc.pointer + 1) % sizeof(qmc.regs);
+}
+
+static const struct i2c_device {
+    uint8_t addr;
+    void (*start_send)(void);
+    uint8_t (*rx)(void);
+    void (*tx)(uint8_t);
+} i2c_devices[] = {
+    { 0x19, lis_start, lis_rx, lis_tx },
+    { 0x1C, qmc_start, qmc_rx, qmc_tx },
+};
+
+// --- command links: recorded, then run by i2c_master_cmd_begin ---
+enum { OP_START, OP_STOP, OP_WRITE, OP_READ };
+
+struct galaxia_i2c_cmd {
+    int count, size;
+    struct { uint8_t op, byte; uint8_t *dest; } *ops;
+};
+
+static esp_err_t cmd_add(i2c_cmd_handle_t cmd, uint8_t op, uint8_t byte, uint8_t *dest) {
+    if (cmd->count == cmd->size) {
+        cmd->size = cmd->size ? cmd->size * 2 : 16;
+        cmd->ops = realloc(cmd->ops, cmd->size * sizeof(*cmd->ops));
+    }
+    cmd->ops[cmd->count].op = op;
+    cmd->ops[cmd->count].byte = byte;
+    cmd->ops[cmd->count].dest = dest;
+    cmd->count++;
+    return ESP_OK;
+}
+
+esp_err_t i2c_param_config(i2c_port_t port, const i2c_config_t *conf) { return ESP_OK; }
+esp_err_t i2c_driver_install(i2c_port_t port, i2c_mode_t mode, size_t rx, size_t tx, int flags) { return ESP_OK; }
+esp_err_t i2c_driver_delete(i2c_port_t port) { return ESP_OK; }
+esp_err_t i2c_set_timeout(i2c_port_t port, int timeout) { return ESP_OK; }
+
+i2c_cmd_handle_t i2c_cmd_link_create(void) {
+    return calloc(1, sizeof(struct galaxia_i2c_cmd));
+}
+
+void i2c_cmd_link_delete(i2c_cmd_handle_t cmd) {
+    if (cmd) {
+        free(cmd->ops);
+        free(cmd);
+    }
+}
+
+esp_err_t i2c_master_start(i2c_cmd_handle_t cmd) { return cmd_add(cmd, OP_START, 0, NULL); }
+esp_err_t i2c_master_stop(i2c_cmd_handle_t cmd) { return cmd_add(cmd, OP_STOP, 0, NULL); }
+
+esp_err_t i2c_master_write_byte(i2c_cmd_handle_t cmd, uint8_t data, bool ack_en) {
+    return cmd_add(cmd, OP_WRITE, data, NULL);
+}
+
+esp_err_t i2c_master_write(i2c_cmd_handle_t cmd, const uint8_t *data, size_t len, bool ack_en) {
+    for (size_t i = 0; i < len; i++) {
+        cmd_add(cmd, OP_WRITE, data[i], NULL);
+    }
+    return ESP_OK;
+}
+
+esp_err_t i2c_master_read_byte(i2c_cmd_handle_t cmd, uint8_t *data, i2c_ack_type_t ack) {
+    return cmd_add(cmd, OP_READ, 0, data);
+}
+
+esp_err_t i2c_master_read(i2c_cmd_handle_t cmd, uint8_t *data, size_t len, i2c_ack_type_t ack) {
+    for (size_t i = 0; i < len; i++) {
+        cmd_add(cmd, OP_READ, 0, data + i);
+    }
+    return ESP_OK;
+}
+
+esp_err_t i2c_master_cmd_begin(i2c_port_t port, i2c_cmd_handle_t cmd, TickType_t ticks) {
+    const struct i2c_device *dev = NULL;
+    bool addressing = false;
+    for (int i = 0; i < cmd->count; i++) {
+        switch (cmd->ops[i].op) {
+            case OP_START:
+                addressing = true;
+                break;
+            case OP_STOP:
+                dev = NULL;
+                break;
+            case OP_WRITE:
+                if (addressing) {
+                    // Address byte: no device answers -> NACK, as on the bus
+                    addressing = false;
+                    dev = NULL;
+                    for (size_t d = 0; d < MP_ARRAY_SIZE(i2c_devices); d++) {
+                        if (i2c_devices[d].addr == cmd->ops[i].byte >> 1) {
+                            dev = &i2c_devices[d];
+                        }
+                    }
+                    if (!dev) {
+                        return ESP_FAIL;
+                    }
+                    if (!(cmd->ops[i].byte & 1)) {
+                        dev->start_send();
+                    }
+                } else if (dev) {
+                    dev->tx(cmd->ops[i].byte);
+                }
+                break;
+            case OP_READ:
+                *cmd->ops[i].dest = dev ? dev->rx() : 0xff;
+                break;
+        }
+    }
+    return ESP_OK;
+}
+
+// Accelerometer, board axes as read by thingz.accelerometer (milli-g). The firmware
+// reads board = (chip_y, -chip_x, -chip_z) (hal/accel_lis2dh12.c).
+EMSCRIPTEN_KEEPALIVE
+void galaxia_set_accel(int x, int y, int z) {
+    lis.mg[0] = -y;
+    lis.mg[1] = x;
+    lis.mg[2] = -z;
+}
+
+// Magnetic field, magnetometer axes (milligauss)
+EMSCRIPTEN_KEEPALIVE
+void galaxia_set_magnetic(int x, int y, int z) {
+    qmc.mgauss[0] = x;
+    qmc.mgauss[1] = y;
+    qmc.mgauss[2] = z;
+}
+
+// A compass heading as thingz.compass.heading() will report it: the field whose
+// reading, once corrected by the firmware's default QMC6310U calibration
+// (hal/magneto.c: calibrated = (raw - hardiron) x softiron, a row vector times a
+// lower triangular matrix), points to `heading` degrees, with a horizontal component
+// `h` and a vertical one `v` in calibrated units. A calibration stored by
+// compass.calibrate() replaces the default one, then the heading drifts as on a board.
+EMSCRIPTEN_KEEPALIVE
+void galaxia_set_compass(double heading, double h, double v) {
+    static const double soft[3][3] = { { 1.601022, 0, 0 }, { -0.336627, 1.392834, 0 }, { 0, 0, 6.549427 } };
+    static const double hard[3] = { -161.899996, -329.866672, -84.533339 };
+    const double rad = heading * M_PI / 180.0;
+    const double cx = h * sin(rad), cy = h * cos(rad), cz = v;
+    // c = m x soft: cx = m0 s00 + m1 s10, cy = m1 s11, cz = m2 s22
+    const double m1 = cy / soft[1][1];
+    const double m0 = (cx - m1 * soft[1][0]) / soft[0][0];
+    const double m2 = cz / soft[2][2];
+    galaxia_set_magnetic((int)lround(m0 + hard[0]), (int)lround(m1 + hard[1]), (int)lround(m2 + hard[2]));
+}
+
+// ===================================================================== LED, light
+
+#define LED_R 41
+#define LED_G 40
+#define LED_B 39
+#define LED_COMMON 10
+#define LEDC_CHANNELS 8
+#define LEDC_FULL_DUTY 8192     // 13-bit duty
+
+static struct {
+    bool on;
+    int gpio;
+    uint32_t duty;
+} ledc[LEDC_CHANNELS];
+
+static int64_t light_t0;        // start of a light measurement (LED common set as input)
+
+esp_err_t ledc_timer_config(const ledc_timer_config_t *cfg) { return ESP_OK; }
+uint32_t ledc_get_freq(ledc_mode_t mode, ledc_timer_t timer) { return 2000; }
+
+esp_err_t ledc_channel_config(const ledc_channel_config_t *cfg) {
+    if (cfg->channel < 0 || cfg->channel >= LEDC_CHANNELS) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ledc[cfg->channel].on = true;
+    ledc[cfg->channel].gpio = cfg->gpio_num;
+    ledc[cfg->channel].duty = cfg->duty;
+    return ESP_OK;
+}
+
+esp_err_t ledc_stop(ledc_mode_t mode, int channel, uint32_t idle_level) {
+    if (channel >= 0 && channel < LEDC_CHANNELS) {
+        ledc[channel].on = false;
+    }
+    return ESP_OK;
+}
+
+esp_err_t gpio_set_drive_capability(gpio_num_t pin, gpio_drive_cap_t strength) { return ESP_OK; }
+
+static int led_level(int gpio) {
+    for (int ch = 0; ch < LEDC_CHANNELS; ch++) {
+        if (ledc[ch].on && ledc[ch].gpio == gpio) {
+            uint32_t d = ledc[ch].duty > LEDC_FULL_DUTY ? LEDC_FULL_DUTY : ledc[ch].duty;
+            return (d * 255 + LEDC_FULL_DUTY / 2) / LEDC_FULL_DUTY;
+        }
+    }
+    return 0;
+}
+
+static void led_poll(void) {
+    static int shown[3] = { -1, -1, -1 };
+    const int rgb[3] = { led_level(LED_R), led_level(LED_G), led_level(LED_B) };
+    if (memcmp(rgb, shown, sizeof(rgb))) {
+        memcpy(shown, rgb, sizeof(rgb));
+        galaxia_js_led(rgb[0], rgb[1], rgb[2]);
+    }
+}
+
+void peripherals_gpio_direction(gpio_num_t pin, gpio_mode_t mode) {
+    if (pin == LED_COMMON && mode == GPIO_MODE_INPUT) {
+        light_t0 = esp_timer_get_time();
+    }
+}
+
+esp_err_t adc1_config_width(adc_bits_width_t width) { return ESP_OK; }
+esp_err_t adc1_config_channel_atten(adc1_channel_t channel, adc_atten_t atten) { return ESP_OK; }
+
+// The LED, reverse charged, discharges through the photocurrent: faster in light.
+// thingz_led maps a discharge of 500..8400 us to a light level of 255..0.
+int adc1_get_raw(adc1_channel_t channel) {
+    if (channel != ADC1_CHANNEL_9) {
+        return 0;
+    }
+    const int light = galaxia_js_light();
+    const int64_t discharge_us = 500 + (int64_t)(255 - light) * (8400 - 500) / 255;
+    return esp_timer_get_time() - light_t0 < discharge_us ? 100 : 0;
+}
+
+// =========================================================================== DAC
+
+struct galaxia_dac_continuous {
+    uint32_t freq_hz;
+    bool enabled;
+};
+
+esp_err_t dac_continuous_new_channels(const dac_continuous_config_t *cfg, dac_continuous_handle_t *out) {
+    *out = calloc(1, sizeof(**out));
+    (*out)->freq_hz = cfg->freq_hz;
+    return ESP_OK;
+}
+
+esp_err_t dac_continuous_del_channels(dac_continuous_handle_t h) {
+    if (h && h->enabled) {
+        galaxia_js_sound_stop();
+    }
+    free(h);
+    return ESP_OK;
+}
+
+esp_err_t dac_continuous_enable(dac_continuous_handle_t h) {
+    h->enabled = true;
+    return ESP_OK;
+}
+
+esp_err_t dac_continuous_disable(dac_continuous_handle_t h) {
+    if (h->enabled) {
+        galaxia_js_sound_stop();
+    }
+    h->enabled = false;
+    return ESP_OK;
+}
+
+// A tone: the page loops the waveform at the DAC rate
+esp_err_t dac_continuous_write_cyclically(dac_continuous_handle_t h, uint8_t *buf, size_t size, size_t *loaded) {
+    galaxia_js_sound_loop(h->freq_hz, buf, size);
+    if (loaded) {
+        *loaded = size;
+    }
+    return ESP_OK;
+}
+
+// Samples (WAV): queued in the page, paced as the DAC would drain them
+esp_err_t dac_continuous_write(dac_continuous_handle_t h, uint8_t *buf, size_t size, size_t *loaded, int timeout_ms) {
+    galaxia_js_sound_chunk(h->freq_hz, buf, size);
+    const int64_t until = esp_timer_get_time() + (int64_t)size * 1000000 / (h->freq_hz ? h->freq_hz : 8000);
+    for (int64_t now; (now = esp_timer_get_time()) < until;) {
+        galaxia_js_sleep((int)((until - now) / 1000) + 1);
+    }
+    if (loaded) {
+        *loaded = size;
+    }
+    return ESP_OK;
+}
+
+// ====================================================================== ESP-NOW
+
+#define RADIO_MAX 256
+
+static esp_now_recv_cb_t radio_recv_cb;
+static esp_now_send_cb_t radio_send_cb;
+static uint8_t radio_channel = 1;
+static bool radio_on;
+
+bool wifi_started;
+
+void esp_initialise_wifi(void) {
+}
+
+esp_err_t esp_wifi_start(void) { return ESP_OK; }
+esp_err_t esp_wifi_stop(void) { return ESP_OK; }
+esp_err_t esp_wifi_deinit(void) { return ESP_OK; }
+esp_err_t esp_wifi_set_mode(wifi_mode_t mode) { return ESP_OK; }
+esp_err_t esp_wifi_set_max_tx_power(int8_t power) { return ESP_OK; }
+esp_err_t esp_wifi_set_protocol(wifi_interface_t ifx, uint8_t bitmap) { return ESP_OK; }
+
+esp_err_t esp_wifi_get_channel(uint8_t *primary, wifi_second_chan_t *second) {
+    *primary = radio_channel;
+    if (second) {
+        *second = WIFI_SECOND_CHAN_NONE;
+    }
+    return ESP_OK;
+}
+
+esp_err_t esp_wifi_set_channel(uint8_t primary, wifi_second_chan_t second) {
+    radio_channel = primary;
+    return ESP_OK;
+}
+
+esp_err_t esp_now_init(void) {
+    radio_on = true;
+    return ESP_OK;
+}
+
+esp_err_t esp_now_deinit(void) {
+    radio_on = false;
+    return ESP_OK;
+}
+
+esp_err_t esp_now_add_peer(const esp_now_peer_info_t *peer) { return ESP_OK; }
+esp_err_t esp_now_mod_peer(const esp_now_peer_info_t *peer) { return ESP_OK; }
+esp_err_t esp_now_del_peer(const uint8_t *peer_addr) { return ESP_OK; }
+
+esp_err_t esp_now_register_recv_cb(esp_now_recv_cb_t cb) {
+    radio_recv_cb = cb;
+    return ESP_OK;
+}
+
+esp_err_t esp_now_unregister_recv_cb(void) {
+    radio_recv_cb = NULL;
+    return ESP_OK;
+}
+
+esp_err_t esp_now_register_send_cb(esp_now_send_cb_t cb) {
+    radio_send_cb = cb;
+    return ESP_OK;
+}
+
+esp_err_t esp_now_unregister_send_cb(void) {
+    radio_send_cb = NULL;
+    return ESP_OK;
+}
+
+esp_err_t esp_now_send(const uint8_t *peer_addr, const uint8_t *data, size_t len) {
+    if (!radio_on) {
+        return ESP_ERR_ESPNOW_IF;
+    }
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    galaxia_js_radio_send(radio_channel, mac, data, len);
+    if (radio_send_cb) {
+        radio_send_cb(peer_addr, ESP_NOW_SEND_SUCCESS);
+    }
+    return ESP_OK;
+}
+
+esp_err_t esp_read_mac(uint8_t *mac, esp_mac_type_t type) {
+    galaxia_js_mac(mac);
+    return ESP_OK;
+}
+
+esp_err_t esp_netif_init(void) { return ESP_OK; }
+void esp_netif_destroy(esp_netif_t *netif) { }
+esp_netif_t *esp_netif_create_default_wifi_sta(void) { return NULL; }
+esp_err_t esp_event_loop_create_default(void) { return ESP_OK; }
+
+static void radio_poll(void) {
+    uint8_t data[RADIO_MAX], mac[6];
+    int channel, len;
+    while ((len = galaxia_js_radio_next(data, sizeof(data), mac, &channel)) >= 0) {
+        if (radio_on && radio_recv_cb && channel == radio_channel) {
+            uint8_t dest[6] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+            wifi_pkt_rx_ctrl_t rx = { .rssi = -40, .channel = channel };
+            esp_now_recv_info_t info = { .src_addr = mac, .des_addr = dest, .rx_ctrl = &rx };
+            radio_recv_cb(&info, data, len);
+        }
+    }
+}
+
+// ===================================================================== others
+
+QueueHandle_t xQueueCreateStatic(UBaseType_t len, UBaseType_t item_size, uint8_t *storage, StaticQueue_t *buf) {
+    return xQueueCreate(len, item_size);
+}
+
+SemaphoreHandle_t xSemaphoreCreateBinaryStatic(StaticSemaphore_t *buf) {
+    return xSemaphoreCreateBinary();
+}
+
+// The log's SPIFFS partition: its files are in the Emscripten file system (/spiffs)
+esp_err_t esp_spiffs_format(const char *partition_label) {
+    EM_ASM({
+        try {
+            for (const name of FS.readdir("/spiffs")) {
+                if (name !== "." && name !== "..") {
+                    FS.unlink("/spiffs/" + name);
+                }
+            }
+        } catch (e) { }
+    });
+    return ESP_OK;
+}
+
+// machine.Pin / machine.PWM: thingz_led creates them to set the LED pins up; here
+// they are placeholders (the LED is driven through ledc_channel_config)
+typedef struct {
+    mp_obj_base_t base;
+    mp_int_t value;
+} placeholder_obj_t;
+
+static mp_obj_t placeholder_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+    placeholder_obj_t *self = mp_obj_malloc(placeholder_obj_t, type);
+    self->value = n_args ? mp_obj_get_int(args[0]) : 0;
+    return MP_OBJ_FROM_PTR(self);
+}
+
+static mp_obj_t placeholder_pin_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+    return placeholder_make_new(type, n_args, n_kw, args);
+}
+
+static mp_obj_t placeholder_pwm_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+    placeholder_obj_t *self = mp_obj_malloc(placeholder_obj_t, type);
+    self->value = 0;
+    return MP_OBJ_FROM_PTR(self);
+}
+
+MP_DEFINE_CONST_OBJ_TYPE(machine_pin_type, MP_QSTR_Pin, MP_TYPE_FLAG_NONE, make_new, placeholder_pin_make_new);
+MP_DEFINE_CONST_OBJ_TYPE(machine_pwm_type, MP_QSTR_PWM, MP_TYPE_FLAG_NONE, make_new, placeholder_pwm_make_new);
+
+// ===================================================================== polling
+
+void peripherals_poll(void) {
+    touch_poll();
+    radio_poll();
+    led_poll();
+}

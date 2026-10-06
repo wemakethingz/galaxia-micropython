@@ -1,0 +1,14 @@
+// Peripherals of the WebAssembly Galaxia (see peripherals.c)
+#ifndef GALAXIA_PERIPHERALS_H
+#define GALAXIA_PERIPHERALS_H
+
+#include "idf/idf_all.h"
+
+// Delivers the inputs the page changed (touch pads, radio packets) and sends the
+// outputs that changed (LED); called from idf_shim_poll()
+void peripherals_poll(void);
+
+// GPIO direction change, for the LED light measurement
+void peripherals_gpio_direction(gpio_num_t pin, gpio_mode_t mode);
+
+#endif

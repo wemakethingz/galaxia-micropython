@@ -1,0 +1,180 @@
+// End-to-end check of the WebAssembly Galaxia page in headless Chrome (DevTools
+// protocol, no dependency): boot, the example program (tilt, LED, touch), the radio
+// between two tabs, files kept across a reload, a firmware crash and reboot.
+//   node wasm/test/browser_check.mjs URL OUT_DIR
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+const url = process.argv[2] || "http://127.0.0.1:8790/";
+const outDir = process.argv[3] || ".";
+const port = 9333;
+const profile = fs.mkdtempSync(path.join(os.tmpdir(), "galaxia-chrome-"));
+const chrome = spawn("google-chrome-stable", [
+    "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
+    "--no-first-run", "--window-size=1200,1000", "--autoplay-policy=no-user-gesture-required", "about:blank",
+], { stdio: "ignore" });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let failures = 0;
+function check(name, ok, detail = "") {
+    console.log(`${ok ? "ok  " : "FAIL"} ${name}${detail ? ": " + detail : ""}`);
+    if (!ok) failures++;
+}
+
+async function devtools(pathname, method = "GET") {
+    for (let i = 0; i < 50; i++) {
+        try {
+            return await (await fetch(`http://127.0.0.1:${port}${pathname}`, { method })).json();
+        } catch {
+            await sleep(200);
+        }
+    }
+    throw new Error("Chrome did not start");
+}
+
+// One tab driven through its DevTools socket
+async function openTab(pageUrl) {
+    const target = (await devtools("/json/list")).find((t) => t.type === "page" && t.url === "about:blank")
+        || await devtools("/json/new?about:blank", "PUT");
+    const ws = new WebSocket(target.webSocketDebuggerUrl);
+    await new Promise((r) => ws.addEventListener("open", r));
+    let id = 0;
+    const pending = new Map();
+    ws.addEventListener("message", (e) => {
+        const m = JSON.parse(e.data);
+        if (m.id && pending.has(m.id)) {
+            pending.get(m.id)(m);
+            pending.delete(m.id);
+        }
+    });
+    // A command that gets no answer in 20 s fails instead of hanging the test
+    const send = (method, params = {}) => new Promise((r) => {
+        const i = ++id;
+        pending.set(i, r);
+        ws.send(JSON.stringify({ id: i, method, params }));
+        setTimeout(() => {
+            if (pending.delete(i)) {
+                console.log(`(no answer to ${method} ${JSON.stringify(params).slice(0, 80)})`);
+                r({});
+            }
+        }, 20000);
+    });
+    const tab = {
+        send,
+        evaluate: async (expr) => {
+            const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true });
+            return r.result?.result?.value;
+        },
+        // Headless Chrome may never answer a screenshot of a background tab: bring it
+        // to the front first, and do without the picture if it still does not come
+        shot: async (name) => {
+            await send("Page.bringToFront");
+            const r = await send("Page.captureScreenshot", { format: "png" });
+            if (r.result?.data) {
+                fs.writeFileSync(path.join(outDir, name), Buffer.from(r.result.data, "base64"));
+            }
+        },
+        term: () => tab.evaluate("galaxiaTerm()"),
+        waitRunning: async () => {
+            for (let i = 0; i < 150; i++) {
+                const s = await tab.evaluate("document.getElementById('status').textContent");
+                if (s && s.startsWith("en marche")) return s;
+                await sleep(100);
+            }
+            return "not running";
+        },
+        waitTerm: async (re, ms = 8000) => {
+            const t0 = Date.now();
+            while (Date.now() - t0 < ms) {
+                if (re.test(await tab.term())) return true;
+                await sleep(100);
+            }
+            return false;
+        },
+        typed: (text) => tab.evaluate(`galaxiaSend(${JSON.stringify(text)})`),
+        pointer: (selector, type) => tab.evaluate(`document.querySelector('${selector}').dispatchEvent(new PointerEvent('${type}', {bubbles: true, pointerId: 1}))`),
+        press: async (selector, ms = 150) => {
+            await tab.pointer(selector, "pointerdown");
+            await sleep(ms);
+            await tab.pointer(selector, "pointerup");
+        },
+        // Mean colour of the screen canvas in a rectangle of the 160 x 128 picture
+        screenPixels: (x, y, w, h) => tab.evaluate(`(() => {
+            const d = document.getElementById('screen').getContext('2d').getImageData(${x}, ${y}, ${w}, ${h}).data;
+            let r = 0, g = 0, b = 0;
+            for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+            const n = d.length / 4;
+            return [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
+        })()`),
+    };
+    await send("Runtime.enable");
+    await send("Page.enable");
+    await send("Page.navigate", { url: pageUrl });
+    return tab;
+}
+
+// --- tab 1: boot, the example program
+const t1 = await openTab(url);
+const t0 = Date.now();
+check("boot", (await t1.waitRunning()).startsWith("en marche"), `${Date.now() - t0} ms`);
+await t1.evaluate("document.getElementById('run').click()");
+await sleep(3500);
+let px = await t1.screenPixels(70, 50, 20, 20);
+check("program: green square in the middle", px[1] > 200 && px[0] < 50, JSON.stringify(px));
+
+// Tilt to the right: the square follows the accelerometer
+await t1.evaluate("document.querySelector('[data-tilt=\"45,0\"]').click()");
+await sleep(600);
+px = await t1.screenPixels(115, 50, 20, 20);
+check("tilt right: square moved right", px[1] > 200, JSON.stringify(px));
+await t1.shot("1-tilted.png");
+
+// Button A: LED blue (and a 440 Hz tone)
+await t1.press('.hwbtn[data-pin="45"]');
+await sleep(400);
+const led = await t1.evaluate("document.getElementById('led').style.background");
+check("button A: LED blue", /rgb\(0, 0, 255\)/.test(led), led);
+
+// Touch pad N: prints the compass heading; set the heading to 120 first
+await t1.evaluate("(() => { const s = document.getElementById('s-head'); s.value = 120; s.dispatchEvent(new Event('input')); })()");
+await sleep(1200);
+await t1.press('.tpad[data-pad="8"]', 200);
+check("touch N: heading printed", await t1.waitTerm(/cap : 1(19|20|21)\b/), (await t1.term()).split("\n").slice(-2).join(" | "));
+await t1.shot("2-led-touch.png");
+
+// --- radio between two tabs (two boards)
+const t2 = await openTab(url);
+check("second board boots", (await t2.waitRunning()).startsWith("en marche"));
+await sleep(2500);
+for (const t of [t1, t2]) {
+    await t.typed("\x03\x03");
+    await sleep(300);
+    await t.typed("from thingz import *\r");
+}
+await sleep(500);
+await t2.typed("radio.send('ping depuis 2')\r");
+await sleep(500);
+await t1.typed("print('RX', radio.receive())\r");
+check("radio: tab 1 receives tab 2's message", await t1.waitTerm(/RX \[b'.*', 'ping depuis 2'\]/), (await t1.term()).split("\n").slice(-2).join(" | "));
+
+// --- files kept: reload tab 1, main.py runs again
+await t1.evaluate("document.getElementById('reboot').click()");
+await sleep(500);
+await t1.send("Page.reload");
+check("reload", (await t1.waitRunning()).startsWith("en marche"));
+await sleep(3500);
+px = await t1.screenPixels(0, 40, 160, 40);
+check("after reload: main.py runs again (green square)", px[1] > 10, JSON.stringify(px));
+await t1.shot("3-after-reload.png");
+
+// --- crash: infinite recursion, the board reboots with its files
+await t1.typed("\x03\x03\x05def r(n):\r    return r(n + 1)\rr(0)\r\x04");
+check("crash reported", await t1.waitTerm(/plantage du firmware/, 10000));
+await sleep(4000);
+px = await t1.screenPixels(0, 40, 160, 40);
+check("after the crash: main.py runs again", px[1] > 10, JSON.stringify(px));
+
+console.log(failures ? `${failures} failure(s)` : "all checks passed");
+chrome.kill();
+process.exit(failures ? 1 : 0);
