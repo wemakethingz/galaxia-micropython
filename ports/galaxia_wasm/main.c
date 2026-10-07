@@ -26,6 +26,9 @@
 #include "common-thingz/thingz_screen/thingz_screen.h"
 #include "debug_mode/debug_mode.h"
 #include "idf_shim.h"
+#include "machine_hw.h"
+#include "ports/esp32/modmachine.h"
+#include "ports/esp32/modnetwork.h"
 
 #define HEAP_SIZE (76 * 1024)       // a program gets as much as on the board (67 kB of bytearray(1000))
 // Recursion depth: MicroPython's check must trip before the browser's native stack
@@ -78,13 +81,21 @@ static void mount_root(void) {
         "    vfs.mount(vfs.VfsFat(_galaxia.flash), '/')\n"
         "except OSError:\n"
         "    vfs.VfsFat.mkfs(_galaxia.flash)\n"
-        "    vfs.mount(vfs.VfsFat(_galaxia.flash), '/')\n"
+        "    v = vfs.VfsFat(_galaxia.flash)\n"
+        "    v.set_label('Galaxia')\n"
+        "    vfs.mount(v, '/')\n"
+        "    with open('boot.py', 'w') as f:\n"
+        "        f.write('# This file is executed on every boot (including wake-boot from deepsleep)\\n#import esp\\n#esp.osdebug(None)\\n#import webrepl\\n#webrepl.start()\\n')\n"
+        "    del v\n"
         "del vfs, _galaxia\n");
 }
 
 EMSCRIPTEN_KEEPALIVE
 void galaxia_main(void) {
     mp_thread_init();
+    gpio_shim_init();
+    machine_hw_boot();      // the reset cause, the RTC clock and memory kept
+    machine_init();
     char *heap = malloc(HEAP_SIZE);
     mkdir("/spiffs", 0777);     // the SPIFFS partition (thingz.log), Emscripten's file system
 
@@ -107,6 +118,7 @@ soft_reset:
     mp_stack_set_limit(C_STACK_LIMIT);
     gc_init(heap, heap + HEAP_SIZE);
     mp_init();
+    machine_pins_init();
     mount_root();
     mp_obj_list_append(mp_sys_path, MP_OBJ_NEW_QSTR(MP_QSTR__slash_lib));
     readline_init0();
@@ -153,8 +165,13 @@ soft_reset:
 
 soft_reset_exit:
     gc_collect();
+    machine_timer_deinit_all();
     mp_thread_deinit();     // as the board: the other threads stop
     gc_sweep_all();
+    machine_pwm_deinit_all();
+    machine_pins_deinit();
+    machine_deinit();
+    socket_events_deinit();
     thingz_deinit();
     mp_hal_stdout_tx_str("Redémarrage du programme\r\n");
     mp_deinit();

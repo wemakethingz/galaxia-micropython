@@ -20,9 +20,15 @@ These parts are the firmware's own code, compiled unchanged:
   (newlib's: `ETIMEDOUT` is 116, `newlib/errno.h`);
 - `_thread` as on the board: threads under the GIL, released every 32 jumps with a
   yield and while a thread waits, 5 kB stacks by default (`mpthreadport.c`, below);
+- `machine` and `time` of the esp32 port (`modmachine.c`, `machine_pin.c`,
+  `machine_timer.c`, `machine_rtc.c`, `machine_pwm.c`, `machine_i2c.c`,
+  `machine_hw_spi.c`, `machine_uart.c`, `machine_adc.c`, `machine_dac.c`,
+  `machine_touchpad.c`, `machine_bitstream.c`, `machine_wdt.c`, `modtime.c`), with
+  SoftI2C, SoftSPI, `time_pulse_us`, `dht_readinto`; thingz_led's PWM objects are
+  machine's, as on the board;
 - the firmware's frozen modules that can run here (`manifest.py`): `supervisor`,
   `asyncio`, `umqtt.simple`/`umqtt.robust`, `requests`/`urequests`, `mip`, `ntptime`,
-  `upysh`;
+  `upysh`, `dht`, `ds18x20`, `neopixel`, `onewire`;
 - the boot sequence of `ports/esp32/main.c`: splash, `/data.csv` copied from the log,
   `main.py`, then the REPL.
 
@@ -34,7 +40,9 @@ These parts are simulated:
 | FreeRTOS tasks of `_thread` (`mpthreadport.c`) | Emscripten fibers (a C stack each, switched by Asyncify) at the board's switch points |
 | ST7735 screen on SPI (`st7735.c`) | the galaxia_sim QEMU model, without QEMU |
 | I2C0 of a PCB 1.0.9: LIS2DH12, LIS2MDL, settings EEPROM (`peripherals.c`) | register models (the LIS2DH12 one from QEMU) |
-| touch pads, LEDC, ADC (light), DAC | at the ESP-IDF driver level |
+| GPIO pads and matrix (`idf_shim.c`) | output, open drain, pulls, hold, interrupts on every level change; the board's wiring (buttons with pull-ups) |
+| touch pads, LEDC, I2C ports, SPI hosts, ADC1/2, DAC (`peripherals.c`, `idf_shim.c`) | at the ESP-IDF driver level, with the ESP32-S2's limits (LEDC dividers, SPI2 taken by the screen) |
+| timers, resets, sleep, RTC, watchdog, UART, RMT (`machine_hw.c`) | timer_ll registers; the page keeps what the RTC keeps across a reset |
 | Wi-Fi chip, ESP-NOW, esp_netif, event loop, lwIP sockets, mDNS (`net.c`) | the ESP-IDF 5.4 API, with its constants, reason codes and the Galaxia's lwIP settings |
 | FAT partition ("USB key") | 2 MB in memory (`galaxia_flash.c`), mounted at `/` |
 | SPIFFS (log) | Emscripten file system, `/spiffs` |
@@ -65,7 +73,7 @@ is older.
     make                         # -> build/www: galaxia.mjs, galaxia.wasm, index.html, worker.js
     python3 -m http.server -d build/www 8790
 
-The site is static files only (445 kB brotli for the `.wasm`) and needs no special
+The site is static files only (496 kB brotli for the `.wasm`) and needs no special
 HTTP header. In the MicroPython tree (`ports/galaxia_wasm`), it builds from that tree.
 From galaxia_sim, it builds from `build/wasm-src`.
 
@@ -75,6 +83,8 @@ Tests:
 - `node test/network.mjs`: Wi-Fi, TCP, UDP, mDNS and a soft-AP between two boards;
 - `node test/threads.mjs`: `_thread`, `supervisor`, Ctrl-C and soft reset with threads;
 - `node test/mqtt.mjs`: two boards and the virtual broker, with `umqtt.simple`;
+- `node test/machine.mjs`: `machine` (Pin, PWM, Timer, RTC, I2C, SPI, UART, ADC, DAC,
+  TouchPad, NeoPixel) and the resets;
 - `node test/run.mjs GALAXIA.mjs SESSION END_REGEX`: a REPL session;
 - `node test/browser_check.mjs URL DIR`: the page in headless Chrome.
 
@@ -142,8 +152,26 @@ Tests:
   FreeRTOS tick; a thread that runs C code without releasing the GIL keeps the CPU,
   as on the board. Recursion in a thread: about 12 Python levels with the default
   stack (to check on a board).
-- **Frozen modules**: left out, since they need what is not here: `dht`, `ds18x20`,
-  `neopixel`, `onewire` (`machine`), `aioespnow` (`espnow`), `ssl`, `webrepl`; and
-  the board's boot scripts. `requests` works in http only.
-- **Not modelled**: microphone and pins (not built in the firmware either), `machine`,
-  the debug menu.
+- **machine**:
+  - the RTC clock starts at 0 at power-on: `time.localtime()` gives 2000-01-01 until
+    the program sets it (`RTC().datetime()`), as on the board; it and `RTC.memory()`
+    survive `machine.reset()`, the watchdog and deep sleep, not the page's reset
+    button (a power-on);
+  - `machine.reset()`, a watchdog not fed (cause `WDT_RESET`) and `deepsleep(ms)` (the
+    board is off, the page boots it again after `ms`) give the board's reset causes
+    and wake reason; deep sleep wakes on its timer only;
+  - the pads read what drives them: their output, the board (buttons A/B, released 1),
+    a pull-up or pull-down, else 0; nothing is wired to the free pins (I2C finds no
+    device, SPI and UART read nothing, ADC reads a little noise, an output toggles
+    nothing); the board's I2C bus (37/33) answers on hardware I2C, not SoftI2C;
+  - the LED: thingz_led sets 13-bit duties on the 14-bit timer machine.PWM sets up at
+    2 kHz, so the LED never exceeds a 50 % duty, on the board too (the page shows the
+    duty with the eye's response: 186 for 255); a Pin or PWM of the program drives it
+    too, as the GPIO matrix routes it;
+  - not modelled: sound from PWM or `DAC.write()` on the speaker pins (only thingz's
+    sound plays), I2S, `esp` and `esp32` modules, light sleep without a wake-up source
+    (it returns at once), ADC2 conflicts with Wi-Fi (to check on a board).
+- **Frozen modules**: left out, since they need what is not here: `aioespnow`
+  (`espnow`), `ssl`, `webrepl`; and the board's boot scripts. `requests` works in
+  http only.
+- **Not modelled**: microphone (not built in the firmware either), the debug menu.

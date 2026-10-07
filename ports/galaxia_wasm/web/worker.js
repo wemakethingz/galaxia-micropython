@@ -24,6 +24,8 @@
 //   {type: "sound", sound: {loop, rate, samples} | null}
 //   {type: "state", state}
 //   {type: "crash", reason, state}          the firmware stopped (the board reboots)
+//   {type: "reset", state, sleepMs}         the board resets (machine.reset, watchdog), or
+//                                           sleeps deeply for sleepMs (-1: until reset)
 //   {type: "error", message}                could not start
 // The radio (ESP-NOW broadcast) goes between the boards of the same browser through
 // a BroadcastChannel.
@@ -63,7 +65,8 @@ const galaxia = {
     lanSend: (frame) => lan.postMessage(frame),
     aps: [],                    // the page's access points (the classroom's Wi-Fi)
     hosts: {},                  // their router's DNS: name -> [a, b, c, d]
-    restart: () => crashed("esp_restart"),
+    reset: (reason, wake, sleepMs) => reset(reason, wake, sleepMs),
+    boot: null,                 // what the previous run left (bootInfo)
 };
 
 radio.onmessage = (e) => {
@@ -97,7 +100,23 @@ function boardState() {
     return state;
 }
 
-const transfers = (state) => [state.flash, state.log, state.eeprom].filter(Boolean).map((a) => a.buffer);
+const transfers = (state) => [state.flash, state.log, state.eeprom, state.boot && state.boot.rtcMem]
+    .filter(Boolean).map((a) => a.buffer);
+
+// esp_reset_reason_t of ESP-IDF
+const ESP_RST_PANIC = 4;
+
+// What the chip keeps across a reset that is not a power-on: the cause, the RTC
+// clock (us) and the RTC memory (machine_hw.c)
+function bootInfo(reason, wake = 0) {
+    const boot = { reason, wake };
+    try {
+        boot.rtcUs = Module._galaxia_rtc_now_us();
+        const ptr = Module._galaxia_rtc_mem();
+        boot.rtcMem = Module.HEAPU8.slice(ptr, ptr + Module._galaxia_rtc_mem_size());
+    } catch { /* memory unusable: as a power-on */ }
+    return boot;
+}
 
 // The firmware aborted (as the board panics and reboots): hand the state to the page
 function crashed(reason) {
@@ -106,7 +125,21 @@ function crashed(reason) {
     }
     ended = true;
     const state = boardState();
+    state.boot = bootInfo(ESP_RST_PANIC);
     postMessage({ type: "crash", reason: String(reason), state }, transfers(state));
+    close();
+}
+
+// The board resets (machine.reset(), the watchdog, a deep sleep of `sleepMs`, -1:
+// until the reset button)
+function reset(reason, wake, sleepMs) {
+    if (ended) {
+        return;
+    }
+    ended = true;
+    const state = boardState();
+    state.boot = bootInfo(reason, wake);
+    postMessage({ type: "reset", state, sleepMs }, transfers(state));
     close();
 }
 
@@ -121,6 +154,7 @@ function wake() {
 }
 
 async function start(state = {}) {
+    galaxia.boot = state.boot || null;
     if (state.mac) {
         galaxia.mac = state.mac;
     } else {

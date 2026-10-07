@@ -109,11 +109,15 @@ await sleep(100);
 v = await py("touch_n.is_touched(), touch_n.was_touched()");
 check("touch N released", v === "False True", v);
 
-// LED colour
+// LED colour. thingz_led sets 8192 * level / 255 on channels of a 14-bit timer (the
+// one machine.PWM configures at 2 kHz): full level is a 50 % duty on the board. The
+// page shows the duty with the eye's response (gamma 2.2).
+const ledShown = (level) => Math.round(255 * Math.pow(Math.floor(8192 * level / 255) / 16384, 1 / 2.2));
 await exec("led.set_colors(255, 128, 0)");
 await sleep(50);
 let last = galaxia.ledLog.at(-1);
-check("LED colour", last && last[0] === 255 && Math.abs(last[1] - 128) <= 1 && last[2] === 0, JSON.stringify(last));
+check("LED colour (50 % duty at most)", last && last[0] === ledShown(255) && Math.abs(last[1] - ledShown(128)) <= 1 && last[2] === 0,
+    `${JSON.stringify(last)}, expected ${[ledShown(255), ledShown(128), 0]}`);
 
 // Light level measured through the LED
 galaxia.light = 200;
@@ -124,7 +128,7 @@ v = await py("led.read_light_level()");
 check("light 20", Math.abs(Number(v) - 20) <= 6, v);
 await sleep(50);
 last = galaxia.ledLog.at(-1);
-check("LED back on after the measurement", last && last[0] === 255, JSON.stringify(last));
+check("LED back on after the measurement", last && last[0] === ledShown(255), JSON.stringify(last));
 
 // Sound: a 440 Hz tone, then off
 await exec("sound.play(True, 440)");

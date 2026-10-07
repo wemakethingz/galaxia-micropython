@@ -210,7 +210,11 @@ function tabMac() {
 /* ---------- the board in a Web Worker ---------- */
 let worker = null;
 let afterState = null;      // what to do with the next {type: "state"}
+let sleepTimer = null;
+let asleep = null;          // the state of a board in deep sleep
 function startBoard(state = {}) {
+  clearTimeout(sleepTimer);
+  asleep = null;
   if (worker) worker.terminate();
   stopSound();
   $("status").textContent = "démarrage…";
@@ -234,6 +238,20 @@ function startBoard(state = {}) {
       const next = afterState;
       afterState = null;
       if (next) next(m.state);
+    } else if (m.type === "reset") {
+      saveState(m.state);
+      if (m.sleepMs) {
+        // Deep sleep: the board is off until its timer (or the reset button)
+        stopSound();
+        showLed(0, 0, 0);
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, 160, 128);
+        $("status").textContent = "en sommeil profond";
+        asleep = m.state;
+        if (m.sleepMs > 0) sleepTimer = setTimeout(() => startBoard(m.state), m.sleepMs);
+      } else {
+        startBoard(m.state);
+      }
     } else if (m.type === "crash") {
       // As the board: the firmware stopped, it reboots and keeps its files
       termWrite(new TextEncoder().encode(`\r\n[plantage du firmware (${m.reason}) : la carte redémarre]\r\n`));
@@ -244,7 +262,7 @@ function startBoard(state = {}) {
     }
   };
   worker.onerror = (e) => { $("status").textContent = "erreur : " + e.message; };
-  worker.postMessage({ type: "start", state }, [state.flash, state.log, state.eeprom].filter(Boolean).map((a) => a.buffer));
+  worker.postMessage({ type: "start", state }, [state.flash, state.log, state.eeprom, state.boot && state.boot.rtcMem].filter(Boolean).map((a) => a.buffer));
   showLed(0, 0, 0);
   sendSensors();
   sendNet();
@@ -491,7 +509,17 @@ $("run").onclick = () => {
   $("term").focus();
 };
 $("stop").onclick = () => send("\x03");
-$("reboot").onclick = () => { afterState = (state) => startBoard(state); worker.postMessage({ type: "get-state" }); };
+// The reset button: a power-on reset (the RTC clock and memory are lost)
+$("reboot").onclick = () => {
+  if (asleep) {
+    const state = asleep;
+    delete state.boot;
+    startBoard(state);
+    return;
+  }
+  afterState = (state) => startBoard(state);
+  worker.postMessage({ type: "get-state" });
+};
 $("erase").onclick = () => { saveState(null); term.lines = [""]; term.row = term.col = 0; startBoard({}); };
 
 /* ---------- terminal: just enough VT100 for the REPL (from galaxia_sim's interface) ---------- */

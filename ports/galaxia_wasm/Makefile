@@ -77,6 +77,7 @@ JSFLAGS += $(EXTRA_LDFLAGS)
 
 SRC_SHARED = $(addprefix shared/,\
 	netutils/netutils.c \
+	runtime/mpirq.c \
 	runtime/interrupt_char.c \
 	runtime/stdout_helpers.c \
 	runtime/sys_stdio_mphal.c \
@@ -95,6 +96,7 @@ SRC_C += \
 	galaxia_flash.c \
 	net.c \
 	mpthreadport.c \
+	machine_hw.c \
 
 # Thingz sources, as they are in the firmware
 SRC_THINGZ = $(addprefix ports/esp32/,\
@@ -109,6 +111,15 @@ SRC_THINGZ = $(addprefix ports/esp32/,\
 	network_common.c \
 	network_wlan.c \
 	modsocket.c \
+	machine_bitstream.c \
+	machine_timer.c \
+	machine_pin.c \
+	machine_touchpad.c \
+	machine_dac.c \
+	machine_i2c.c \
+	machine_hw_spi.c \
+	machine_rtc.c \
+	adc.c \
 	common-thingz/thingz_log/thingz_log.c \
 	common-thingz/thingz_memory/thingz_memory.c \
 	hal/eeprom.c \
@@ -135,14 +146,31 @@ SRC_THINGZ = $(addprefix ports/esp32/,\
 	lib/tft/font.c \
 	)
 
-SRC_QSTR += $(SRC_C) $(SRC_SHARED) $(addprefix $(TOP)/,$(SRC_THINGZ))
+# Drivers of the board's machine module (ports/esp32/esp32_common.cmake)
+SRC_DRIVERS = drivers/bus/softspi.c drivers/dht/dht.c
+OBJ += $(addprefix $(BUILD)/, $(SRC_DRIVERS:.c=.o))
+
+# The esp32 port's pin table (no pins.csv on the Galaxia: numbers only)
+GEN_PINS_SRC = $(BUILD)/pins.c
+GEN_PINS_HDR = $(HEADER_BUILD)/pins.h
+$(GEN_PINS_SRC) $(GEN_PINS_HDR): $(ESP32_DIR)/boards/make-pins.py $(ESP32_DIR)/boards/pins_prefix.c | $(HEADER_BUILD)
+	$(ECHO) "GEN $@"
+	$(Q)$(PYTHON) $(ESP32_DIR)/boards/make-pins.py --prefix $(ESP32_DIR)/boards/pins_prefix.c \
+		--output-source $(GEN_PINS_SRC) --output-header $(GEN_PINS_HDR)
+QSTR_GLOBAL_DEPENDENCIES += $(GEN_PINS_HDR)
+
+SRC_QSTR += $(SRC_C) $(SRC_SHARED) $(addprefix $(TOP)/,$(SRC_THINGZ)) $(GEN_PINS_SRC) $(SRC_DRIVERS)
 
 OBJ += $(PY_O)
 OBJ += $(addprefix $(BUILD)/, $(SRC_SHARED:.c=.o))
 OBJ += $(addprefix $(BUILD)/, $(SRC_C:.c=.o))
 OBJ += $(addprefix $(BUILD)/, $(SRC_THINGZ:.c=.o))
+OBJ += $(BUILD)/pins.o
 
 $(addprefix $(BUILD)/, $(SRC_THINGZ:.c=.o)): CFLAGS += $(THINGZ_CFLAGS)
+# The esp32 port's code included by extmod (MICROPY_PY_*_INCLUDEFILE): built as on
+# the board, its warnings are not ours to fix
+$(addprefix $(BUILD)/extmod/, modmachine.o machine_adc.o machine_adc_block.o machine_pwm.o machine_uart.o machine_wdt.o modtime.o): CFLAGS += -Wno-error
 
 all: $(BUILD)/www/index.html
 

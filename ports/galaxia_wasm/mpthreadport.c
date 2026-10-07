@@ -23,6 +23,7 @@
 #include "py/mpthread.h"
 #include "py/mphal.h"
 #include "mpthreadport.h"
+#include "idf/idf_all.h"
 
 #if MICROPY_PY_THREAD
 
@@ -45,6 +46,7 @@ typedef struct _galaxia_thread_t {
     mp_thread_mutex_t *waiting;     // T_BLOCKED: on this mutex
     mp_state_thread_t *state;
     void *(*entry)(void *);
+    void (*task)(void *);           // a FreeRTOS task of a driver (not Python)
     void *arg;                      // the Python arguments: a GC root
     bool ready;                     // started (mp_thread_start), not finished
     struct _galaxia_thread_t *next;
@@ -180,11 +182,40 @@ void galaxia_thread_sleep_ms(int ms) {
 
 static void fiber_entry(void *arg) {
     galaxia_thread_t *t = arg;
-    t->entry(t->arg);
+    if (t->task) {
+        t->task(t->arg);
+    } else {
+        t->entry(t->arg);
+    }
     t->status = T_FINISHED;
     t->ready = false;
     schedule();     // never comes back
     abort();
+}
+
+static galaxia_thread_t *new_fiber(size_t stack_size) {
+    if (!main_fiber_ready) {
+        main_thread.asyncify_stack = malloc(FIBER_ASYNCIFY_STACK);
+        emscripten_fiber_init_from_current_context(&main_thread.fiber, main_thread.asyncify_stack, FIBER_ASYNCIFY_STACK);
+        main_fiber_ready = true;
+    }
+    galaxia_thread_t *t = calloc(1, sizeof(*t));
+    size_t c_size = stack_size > FIBER_C_STACK / 4 ? stack_size * 4 : FIBER_C_STACK;
+    if (!t) {
+        return NULL;
+    }
+    t->c_stack = malloc(c_size);
+    t->asyncify_stack = malloc(FIBER_ASYNCIFY_STACK);
+    if (!t->c_stack || !t->asyncify_stack) {
+        free_thread(t);
+        return NULL;
+    }
+    emscripten_fiber_init(&t->fiber, fiber_entry, t, t->c_stack, c_size, t->asyncify_stack, FIBER_ASYNCIFY_STACK);
+    t->status = T_RUNNABLE;
+    // After the main thread in the list: it runs at the next switch
+    t->next = threads->next;
+    threads->next = t;
+    return t;
 }
 
 mp_uint_t mp_thread_create(void *(*entry)(void *), void *arg, size_t *stack_size) {
@@ -193,29 +224,46 @@ mp_uint_t mp_thread_create(void *(*entry)(void *), void *arg, size_t *stack_size
     } else if (*stack_size < MP_THREAD_MIN_STACK_SIZE) {
         *stack_size = MP_THREAD_MIN_STACK_SIZE;
     }
-    if (!main_fiber_ready) {
-        main_thread.asyncify_stack = malloc(FIBER_ASYNCIFY_STACK);
-        emscripten_fiber_init_from_current_context(&main_thread.fiber, main_thread.asyncify_stack, FIBER_ASYNCIFY_STACK);
-        main_fiber_ready = true;
-    }
-    galaxia_thread_t *t = calloc(1, sizeof(*t));
-    size_t c_size = *stack_size > FIBER_C_STACK / 4 ? *stack_size * 4 : FIBER_C_STACK;
-    t->c_stack = malloc(c_size);
-    t->asyncify_stack = malloc(FIBER_ASYNCIFY_STACK);
-    if (!t || !t->c_stack || !t->asyncify_stack) {
-        if (t) {
-            free_thread(t);
-        }
+    galaxia_thread_t *t = new_fiber(*stack_size);
+    if (!t) {
         mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("can't create thread"));
     }
-    emscripten_fiber_init(&t->fiber, fiber_entry, t, t->c_stack, c_size, t->asyncify_stack, FIBER_ASYNCIFY_STACK);
     t->entry = entry;
     t->arg = arg;
-    t->status = T_RUNNABLE;
-    // After the main thread in the list: it runs at the next switch
-    t->next = threads->next;
-    threads->next = t;
     return (mp_uint_t)t;
+}
+
+// ---- FreeRTOS tasks of the drivers: fibers in the same scheduler, outside Python
+// (they only schedule callbacks, with the main thread's state) ----
+
+bool galaxia_in_task(void) {
+    return current->task != NULL;
+}
+
+BaseType_t xTaskCreatePinnedToCore(TaskFunction_t fn, const char *name, uint32_t stack_depth, void *arg,
+    UBaseType_t priority, TaskHandle_t *created_task, BaseType_t core_id) {
+    if (threads == NULL) {
+        mp_thread_init();
+    }
+    galaxia_thread_t *t = new_fiber(stack_depth * sizeof(StackType_t));
+    if (!t) {
+        return pdFAIL;
+    }
+    t->task = fn;
+    t->arg = arg;
+    t->state = &mp_state_ctx.thread;
+    if (created_task) {
+        *created_task = t;
+    }
+    return pdPASS;
+}
+
+void vTaskDelete(TaskHandle_t task) {
+    galaxia_thread_t *t = task ? task : current;
+    t->status = T_FINISHED;
+    if (t == current) {
+        schedule();     // never comes back
+    }
 }
 
 static void gc_range(void *lo, void *hi) {

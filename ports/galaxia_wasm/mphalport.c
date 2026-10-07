@@ -1,6 +1,7 @@
 // HAL of the galaxia_sim WebAssembly port: time, REPL input/output, polling.
 
 #include <string.h>
+#include <sys/time.h>
 
 #include "py/mphal.h"
 #include "py/runtime.h"
@@ -97,6 +98,11 @@ void mp_hal_delay_ms(mp_uint_t ms) {
 void mp_hal_delay_us(mp_uint_t us) {
     if (us >= 1000) {
         mp_hal_delay_ms(us / 1000);
+        us %= 1000;
+    }
+    // A short wait spins, as the board's (bit-banged protocols time with it)
+    const uint32_t start = mp_hal_ticks_us();
+    while (mp_hal_ticks_us() - start < us) {
     }
 }
 
@@ -108,17 +114,22 @@ mp_uint_t mp_hal_ticks_us(void) {
     return mp_js_ticks_us();
 }
 
+// The CPU's cycle counter (CCOUNT), at the CPU frequency
 mp_uint_t mp_hal_ticks_cpu(void) {
-    return 0;
+    return (mp_uint_t)((uint64_t)mp_hal_ticks_us() * mp_hal_get_cpu_freq() / 1000000);
 }
 
+// The RTC clock, as the board's (machine_hw.c): 0 at power-on
 uint64_t mp_hal_time_ms(void) {
-    double mm = mp_js_time_ms();
-    return (uint64_t)mm;
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 
 uint64_t mp_hal_time_ns(void) {
-    return mp_hal_time_ms() * 1000000ULL;
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (uint64_t)tv.tv_sec * 1000000000ULL + tv.tv_usec * 1000ULL;
 }
 
 uintptr_t mp_hal_stdio_poll(uintptr_t poll_flags) {

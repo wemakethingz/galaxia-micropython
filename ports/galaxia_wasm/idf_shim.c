@@ -13,6 +13,7 @@
 #include "st7735.h"
 #include "peripherals.h"
 #include "net.h"
+#include "mpthreadport.h"
 #include "mpconfigboard.h"
 
 extern int galaxia_js_gpio_get(int pin);
@@ -20,8 +21,23 @@ extern int galaxia_js_gpio_next_changed(void);
 extern void galaxia_js_screen(const uint8_t *rgba, int width, int height);
 extern void galaxia_js_sleep(int ms);
 
+// The names ESP-IDF gives the errors (OSError messages of check_esp_err)
 const char *esp_err_to_name(esp_err_t code) {
-    return code == ESP_OK ? "ESP_OK" : "ESP_FAIL";
+    static const struct { esp_err_t code; const char *name; } names[] = {
+        { ESP_OK, "ESP_OK" }, { ESP_FAIL, "ESP_FAIL" }, { ESP_ERR_NO_MEM, "ESP_ERR_NO_MEM" },
+        { ESP_ERR_INVALID_ARG, "ESP_ERR_INVALID_ARG" }, { ESP_ERR_INVALID_STATE, "ESP_ERR_INVALID_STATE" },
+        { ESP_ERR_INVALID_SIZE, "ESP_ERR_INVALID_SIZE" }, { ESP_ERR_NOT_FOUND, "ESP_ERR_NOT_FOUND" },
+        { ESP_ERR_NOT_SUPPORTED, "ESP_ERR_NOT_SUPPORTED" }, { ESP_ERR_TIMEOUT, "ESP_ERR_TIMEOUT" },
+        { ESP_ERR_INVALID_RESPONSE, "ESP_ERR_INVALID_RESPONSE" }, { ESP_ERR_INVALID_CRC, "ESP_ERR_INVALID_CRC" },
+        { ESP_ERR_INVALID_VERSION, "ESP_ERR_INVALID_VERSION" }, { ESP_ERR_INVALID_MAC, "ESP_ERR_INVALID_MAC" },
+        { ESP_ERR_NOT_FINISHED, "ESP_ERR_NOT_FINISHED" },
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (names[i].code == code) {
+            return names[i].name;
+        }
+    }
+    return "UNKNOWN ERROR";
 }
 
 // ---- time ----
@@ -107,7 +123,14 @@ BaseType_t xQueueSend(QueueHandle_t q, const void *item, TickType_t ticks) {
 }
 
 BaseType_t xQueueReceive(QueueHandle_t q, void *item, TickType_t ticks) {
-    (void)ticks;
+    // A FreeRTOS task (UART events) waits for an item; elsewhere the senders have
+    // already run (one thread), so the queue holds what will ever come
+    if (q && q->count == 0 && ticks && galaxia_in_task()) {
+        const int64_t until = ticks == portMAX_DELAY ? INT64_MAX : esp_timer_get_time() + (int64_t)ticks * portTICK_PERIOD_MS * 1000;
+        while (q->count == 0 && esp_timer_get_time() < until) {
+            galaxia_thread_sleep_ms(10);
+        }
+    }
     if (!q || q->count == 0) {
         return pdFALSE;
     }
@@ -234,17 +257,24 @@ size_t esp_get_free_heap_size(void) {
     return 1 << 20;
 }
 
-void esp_restart(void) {
-    EM_ASM({ Module.galaxia.restart(); });
-}
-
 // ---- GPIO ----
+// The pads of the ESP32-S2 and what the Galaxia wires to them. A pad's level is what
+// drives it: its own output (push-pull, or open drain pulling low), else the
+// board (buttons A and B on 45 and 43 have a pull-up: 1, 0 when pressed from the
+// page), else its internal pull-up or pull-down, else nothing (it reads 0). An
+// input disabled reads 0. Each change of a pad's level, from the page or from the
+// program, raises its interrupt as the GPIO block does. The GPIO matrix routes a
+// peripheral's signal (LEDC) or the GPIO output register to the pad.
 
 #define GPIO_COUNT 64
 
 static struct {
-    bool output;
-    uint8_t level;          // output level
+    bool input, output, open_drain;
+    uint8_t level;          // output register
+    bool pull_up, pull_down, hold;
+    int drive;
+    int signal;             // output signal routed to the pad (SIG_GPIO_OUT_IDX: GPIO)
+    uint8_t pad;            // last level seen (edges)
     gpio_int_type_t intr_type;
     bool intr_enabled;
     gpio_isr_t handler;
@@ -255,59 +285,270 @@ static bool pin_ok(gpio_num_t pin) {
     return pin >= 0 && pin < GPIO_COUNT;
 }
 
+void gpio_shim_init(void) {
+    for (int pin = 0; pin < GPIO_COUNT; pin++) {
+        gpio[pin].signal = SIG_GPIO_OUT_IDX;
+        gpio[pin].drive = GPIO_DRIVE_CAP_DEFAULT;
+    }
+}
+
+// What the board drives on a pad, -1 for nothing
+static int board_level(gpio_num_t pin) {
+    int v = galaxia_js_gpio_get(pin);
+    if (v >= 0) {
+        return v;
+    }
+    if (pin == 45 || pin == 43) {
+        return 1;       // button released: pull-up of the board
+    }
+    return -1;
+}
+
+// The level on a pad
+static int pad_level(gpio_num_t pin) {
+    if (gpio[pin].output && gpio[pin].signal == SIG_GPIO_OUT_IDX && !(gpio[pin].open_drain && gpio[pin].level)) {
+        return gpio[pin].level;
+    }
+    int v = board_level(pin);
+    if (v >= 0) {
+        return v;
+    }
+    if (gpio[pin].pull_up || gpio[pin].open_drain) {
+        return 1;       // (an open-drain line released: the bus pull-ups)
+    }
+    return 0;
+}
+
+static void gpio_edge(gpio_num_t pin) {
+    const int level = pad_level(pin);
+    if (level == gpio[pin].pad) {
+        return;
+    }
+    gpio[pin].pad = level;
+    if (!gpio[pin].input || !gpio[pin].handler || !gpio[pin].intr_enabled) {
+        return;
+    }
+    bool fire;
+    switch (gpio[pin].intr_type) {
+        case GPIO_INTR_POSEDGE:
+            fire = level;
+            break;
+        case GPIO_INTR_NEGEDGE:
+            fire = !level;
+            break;
+        case GPIO_INTR_ANYEDGE:
+            fire = true;
+            break;
+        case GPIO_INTR_LOW_LEVEL:
+            fire = !level;
+            break;
+        case GPIO_INTR_HIGH_LEVEL:
+            fire = level;
+            break;
+        default:
+            fire = false;
+            break;
+    }
+    if (fire) {
+        gpio[pin].handler(gpio[pin].arg);
+    }
+}
+
+static void set_mode(gpio_num_t pin, gpio_mode_t mode) {
+    gpio[pin].input = mode & GPIO_MODE_DEF_INPUT;
+    gpio[pin].output = mode & GPIO_MODE_DEF_OUTPUT;
+    gpio[pin].open_drain = mode & GPIO_MODE_DEF_OD;
+    peripherals_gpio_direction(pin, mode);
+    gpio_edge(pin);
+}
+
 esp_err_t gpio_config(const gpio_config_t *conf) {
     for (int pin = 0; pin < GPIO_COUNT; pin++) {
         if (conf->pin_bit_mask & (1ULL << pin)) {
-            gpio[pin].output = conf->mode & GPIO_MODE_OUTPUT;
+            if (!GPIO_IS_VALID_GPIO(pin) || ((conf->mode & GPIO_MODE_DEF_OUTPUT) && !GPIO_IS_VALID_OUTPUT_GPIO(pin))) {
+                return ESP_ERR_INVALID_ARG;
+            }
+            gpio[pin].signal = SIG_GPIO_OUT_IDX;
+            gpio[pin].pull_up = conf->pull_up_en;
+            gpio[pin].pull_down = conf->pull_down_en;
             gpio[pin].intr_type = conf->intr_type;
             gpio[pin].intr_enabled = conf->intr_type != GPIO_INTR_DISABLE;
+            set_mode(pin, conf->mode);
         }
     }
     return ESP_OK;
 }
 
+// As ESP-IDF: input only, pull-up, no interrupt, GPIO function
 esp_err_t gpio_reset_pin(gpio_num_t pin) {
-    if (pin_ok(pin)) {
-        gpio[pin].output = false;
-        gpio[pin].intr_type = GPIO_INTR_DISABLE;
-        gpio[pin].intr_enabled = false;
+    if (!GPIO_IS_VALID_GPIO(pin)) {
+        return ESP_ERR_INVALID_ARG;
     }
+    gpio[pin].signal = SIG_GPIO_OUT_IDX;
+    gpio[pin].pull_up = true;
+    gpio[pin].pull_down = false;
+    gpio[pin].intr_type = GPIO_INTR_DISABLE;
+    gpio[pin].intr_enabled = false;
+    set_mode(pin, GPIO_MODE_INPUT);
     return ESP_OK;
 }
 
 esp_err_t gpio_set_direction(gpio_num_t pin, gpio_mode_t mode) {
-    if (pin_ok(pin)) {
-        gpio[pin].output = mode & GPIO_MODE_OUTPUT;
-        peripherals_gpio_direction(pin, mode);
+    if (!GPIO_IS_VALID_GPIO(pin) || ((mode & GPIO_MODE_DEF_OUTPUT) && !GPIO_IS_VALID_OUTPUT_GPIO(pin))) {
+        return ESP_ERR_INVALID_ARG;
     }
+    set_mode(pin, mode);
     return ESP_OK;
 }
 
 esp_err_t gpio_set_level(gpio_num_t pin, uint32_t level) {
-    if (pin_ok(pin)) {
-        gpio[pin].level = level ? 1 : 0;
-        if (pin == MICROPY_THINGZ_SCREEN_RESET_GPIO && !level) {
-            st7735_reset();
-        }
+    if (!GPIO_IS_VALID_OUTPUT_GPIO(pin)) {
+        return ESP_ERR_INVALID_ARG;
     }
+    if (gpio[pin].hold) {
+        return ESP_OK;      // held: the pad keeps its level
+    }
+    gpio[pin].level = level ? 1 : 0;
+    if (pin == MICROPY_THINGZ_SCREEN_RESET_GPIO && !level) {
+        st7735_reset();
+    }
+    gpio_edge(pin);
     return ESP_OK;
 }
 
 int gpio_get_level(gpio_num_t pin) {
-    if (!pin_ok(pin)) {
+    if (!pin_ok(pin) || !gpio[pin].input) {
         return 0;
     }
-    return gpio[pin].output ? gpio[pin].level : galaxia_js_gpio_get(pin);
+    return pad_level(pin);
+}
+
+// For the peripherals: the output register of a pad and whether it drives it
+int gpio_shim_output(gpio_num_t pin) {
+    return pin_ok(pin) && gpio[pin].output && gpio[pin].signal == SIG_GPIO_OUT_IDX ? gpio[pin].level : -1;
+}
+
+int gpio_shim_signal(gpio_num_t pin) {
+    return pin_ok(pin) ? gpio[pin].signal : SIG_GPIO_OUT_IDX;
+}
+
+bool gpio_shim_pulled(gpio_num_t pin, int *level) {
+    if (!pin_ok(pin) || (!gpio[pin].pull_up && !gpio[pin].pull_down)) {
+        return false;
+    }
+    *level = gpio[pin].pull_up;
+    return true;
 }
 
 esp_err_t gpio_set_pull_mode(gpio_num_t pin, gpio_pull_mode_t pull) {
+    if (!GPIO_IS_VALID_GPIO(pin)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    gpio[pin].pull_up = pull == GPIO_PULLUP_ONLY || pull == GPIO_PULLUP_PULLDOWN;
+    gpio[pin].pull_down = pull == GPIO_PULLDOWN_ONLY || pull == GPIO_PULLUP_PULLDOWN;
+    gpio_edge(pin);
     return ESP_OK;
 }
 
-esp_err_t gpio_set_intr_type(gpio_num_t pin, gpio_int_type_t type) {
-    if (pin_ok(pin)) {
-        gpio[pin].intr_type = type;
+esp_err_t gpio_pullup_en(gpio_num_t pin) {
+    if (!GPIO_IS_VALID_GPIO(pin)) {
+        return ESP_ERR_INVALID_ARG;
     }
+    gpio[pin].pull_up = true;
+    gpio_edge(pin);
+    return ESP_OK;
+}
+
+esp_err_t gpio_pullup_dis(gpio_num_t pin) {
+    if (!GPIO_IS_VALID_GPIO(pin)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    gpio[pin].pull_up = false;
+    gpio_edge(pin);
+    return ESP_OK;
+}
+
+esp_err_t gpio_pulldown_en(gpio_num_t pin) {
+    if (!GPIO_IS_VALID_GPIO(pin)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    gpio[pin].pull_down = true;
+    gpio_edge(pin);
+    return ESP_OK;
+}
+
+esp_err_t gpio_pulldown_dis(gpio_num_t pin) {
+    if (!GPIO_IS_VALID_GPIO(pin)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    gpio[pin].pull_down = false;
+    gpio_edge(pin);
+    return ESP_OK;
+}
+
+esp_err_t gpio_hold_en(gpio_num_t pin) {
+    if (!GPIO_IS_VALID_OUTPUT_GPIO(pin)) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    gpio[pin].hold = true;
+    return ESP_OK;
+}
+
+esp_err_t gpio_hold_dis(gpio_num_t pin) {
+    if (!GPIO_IS_VALID_OUTPUT_GPIO(pin)) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    gpio[pin].hold = false;
+    return ESP_OK;
+}
+
+esp_err_t gpio_set_drive_capability(gpio_num_t pin, gpio_drive_cap_t strength) {
+    if (!GPIO_IS_VALID_OUTPUT_GPIO(pin) || strength >= GPIO_DRIVE_CAP_MAX) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    gpio[pin].drive = strength;
+    return ESP_OK;
+}
+
+void esp_rom_gpio_pad_select_gpio(uint32_t pin) {
+    if (pin_ok(pin)) {
+        gpio[pin].signal = SIG_GPIO_OUT_IDX;
+        gpio_edge(pin);
+    }
+}
+
+void esp_rom_gpio_connect_out_signal(uint32_t pin, uint32_t signal, bool out_inv, bool oen_inv) {
+    if (pin_ok(pin)) {
+        gpio[pin].signal = signal;
+        gpio_edge(pin);
+    }
+}
+
+// The output set/clear registers (bit-banged bitstream)
+void galaxia_gpio_reg_write(uint32_t reg, uint32_t value) {
+    const int base = (reg == GPIO_OUT1_W1TS_REG || reg == GPIO_OUT1_W1TC_REG) ? 32 : 0;
+    const bool set = reg == GPIO_OUT_W1TS_REG || reg == GPIO_OUT1_W1TS_REG;
+    for (int i = 0; i < 32; i++) {
+        if ((value & (1u << i)) && pin_ok(base + i)) {
+            gpio[base + i].level = set;
+            gpio_edge(base + i);
+        }
+    }
+}
+
+gpio_dev_t *galaxia_gpio_dev(void) {
+    static gpio_dev_t dev;
+    for (int pin = 0; pin < SOC_GPIO_PIN_COUNT; pin++) {
+        dev.pin[pin].int_type = gpio[pin].intr_enabled ? gpio[pin].intr_type : GPIO_INTR_DISABLE;
+    }
+    return &dev;
+}
+
+esp_err_t gpio_set_intr_type(gpio_num_t pin, gpio_int_type_t type) {
+    if (!GPIO_IS_VALID_GPIO(pin)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    gpio[pin].intr_type = type;
     return ESP_OK;
 }
 
@@ -329,10 +570,13 @@ esp_err_t gpio_install_isr_service(int flags) {
     return ESP_OK;
 }
 
+// As ESP-IDF's: adding a handler enables the pad's interrupt
 esp_err_t gpio_isr_handler_add(gpio_num_t pin, gpio_isr_t handler, void *arg) {
     if (pin_ok(pin)) {
         gpio[pin].handler = handler;
         gpio[pin].arg = arg;
+        gpio[pin].intr_enabled = true;
+        gpio[pin].pad = pad_level(pin);
     }
     return ESP_OK;
 }
@@ -340,65 +584,121 @@ esp_err_t gpio_isr_handler_add(gpio_num_t pin, gpio_isr_t handler, void *arg) {
 esp_err_t gpio_isr_handler_remove(gpio_num_t pin) {
     if (pin_ok(pin)) {
         gpio[pin].handler = NULL;
+        gpio[pin].intr_enabled = false;
     }
     return ESP_OK;
 }
 
-// The page changed input levels: edges go to the interrupt handlers
+bool rtc_gpio_is_valid_gpio(gpio_num_t pin) {
+    return pin >= 0 && pin <= 21;
+}
+
+esp_err_t rtc_gpio_deinit(gpio_num_t pin) {
+    return ESP_OK;
+}
+
+// The page changed the levels it drives: edges go to the interrupt handlers
 static void deliver_gpio_edges(void) {
     int pin;
     while ((pin = galaxia_js_gpio_next_changed()) >= 0) {
-        if (!pin_ok(pin) || gpio[pin].output || !gpio[pin].handler || !gpio[pin].intr_enabled) {
-            continue;
-        }
-        const int level = galaxia_js_gpio_get(pin);
-        bool fire;
-        switch (gpio[pin].intr_type) {
-            case GPIO_INTR_POSEDGE:
-                fire = level;
-                break;
-            case GPIO_INTR_NEGEDGE:
-                fire = !level;
-                break;
-            case GPIO_INTR_ANYEDGE:
-                fire = true;
-                break;
-            case GPIO_INTR_LOW_LEVEL:
-                fire = !level;
-                break;
-            case GPIO_INTR_HIGH_LEVEL:
-                fire = level;
-                break;
-            default:
-                fire = false;
-                break;
-        }
-        if (fire) {
-            gpio[pin].handler(gpio[pin].arg);
+        if (pin_ok(pin)) {
+            gpio_edge(pin);
         }
     }
 }
 
-// ---- SPI master: the only device is the screen ----
+// ---- SPI master: the three hosts of the ESP32-S2. The screen is the device on
+// SPI2 (lib/tft/ili9340.c); nothing else is wired, a device elsewhere reads 0. ----
 
 struct galaxia_spi_device {
+    spi_host_device_t host;
+    bool screen;
     int queued_count;
     spi_transaction_t *queued[8];
 };
 
+static struct {
+    bool initialized;
+    int devices;
+} spi_bus[3];
+
 esp_err_t spi_bus_initialize(spi_host_device_t host, const spi_bus_config_t *cfg, int dma_chan) {
+    if (host < SPI2_HOST || host > SPI3_HOST) {
+        return ESP_ERR_INVALID_ARG;     // SPI1 is the flash's
+    }
+    if (spi_bus[host].initialized) {
+        return ESP_ERR_INVALID_STATE;   // "SPI host already in use"
+    }
+    spi_bus[host].initialized = true;
+    return ESP_OK;
+}
+
+esp_err_t spi_bus_free(spi_host_device_t host) {
+    if (host < SPI2_HOST || host > SPI3_HOST || !spi_bus[host].initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (spi_bus[host].devices) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    spi_bus[host].initialized = false;
     return ESP_OK;
 }
 
 esp_err_t spi_bus_add_device(spi_host_device_t host, const spi_device_interface_config_t *cfg, spi_device_handle_t *out) {
+    if (host < SPI2_HOST || host > SPI3_HOST || !spi_bus[host].initialized) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (spi_bus[host].devices == 3) {
+        return ESP_ERR_NOT_FOUND;       // no free CS
+    }
     *out = calloc(1, sizeof(**out));
+    (*out)->host = host;
+    (*out)->screen = host == SPI2_HOST && cfg->spics_io_num == MICROPY_THINGZ_SCREEN_TFT_CS_GPIO && spi_bus[host].devices == 0;
+    spi_bus[host].devices++;
     return ESP_OK;
+}
+
+esp_err_t spi_bus_remove_device(spi_device_handle_t dev) {
+    if (!dev) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    spi_bus[dev->host].devices--;
+    free(dev);
+    return ESP_OK;
+}
+
+esp_err_t spi_device_acquire_bus(spi_device_handle_t dev, TickType_t wait) {
+    return ESP_OK;
+}
+
+void spi_device_release_bus(spi_device_handle_t dev) {
+}
+
+// What the SPI clock can be: the APB clock divided by an integer
+int spi_get_actual_clock(int fapb, int hz, int duty_cycle) {
+    if (hz >= fapb) {
+        return fapb;
+    }
+    int n = (fapb + hz - 1) / hz;
+    if (n > 8192) {
+        n = 8192;
+    }
+    return fapb / n;
 }
 
 esp_err_t spi_device_polling_transmit(spi_device_handle_t dev, spi_transaction_t *t) {
     const uint8_t *bytes = (t->flags & SPI_TRANS_USE_TXDATA) ? t->tx_data : t->tx_buffer;
-    if (bytes && t->length) {
-        st7735_write(gpio[MICROPY_THINGZ_SCREEN_DC_GPIO].level, bytes, t->length / 8);
+    if (dev->screen) {
+        if (bytes && t->length) {
+            st7735_write(gpio[MICROPY_THINGZ_SCREEN_DC_GPIO].level, bytes, t->length / 8);
+        }
+        return ESP_OK;
+    }
+    // Nothing on MISO
+    size_t rx_bits = t->rxlength ? t->rxlength : t->length;
+    uint8_t *rx = (t->flags & SPI_TRANS_USE_RXDATA) ? t->rx_data : t->rx_buffer;
+    if (rx && rx_bits) {
+        memset(rx, 0, (rx_bits + 7) / 8);
     }
     return ESP_OK;
 }

@@ -100,12 +100,12 @@ esp_err_t ledc_channel_config(const ledc_channel_config_t *cfg);
 esp_err_t ledc_timer_config(const ledc_timer_config_t *cfg);
 esp_err_t ledc_stop(ledc_mode_t mode, int channel, uint32_t idle_level);
 uint32_t ledc_get_freq(ledc_mode_t mode, ledc_timer_t timer);
-typedef enum { GPIO_DRIVE_CAP_0, GPIO_DRIVE_CAP_1, GPIO_DRIVE_CAP_2, GPIO_DRIVE_CAP_3 } gpio_drive_cap_t;
+typedef enum { GPIO_DRIVE_CAP_0, GPIO_DRIVE_CAP_1, GPIO_DRIVE_CAP_2, GPIO_DRIVE_CAP_DEFAULT = 2, GPIO_DRIVE_CAP_3, GPIO_DRIVE_CAP_MAX } gpio_drive_cap_t;
 esp_err_t gpio_set_drive_capability(gpio_num_t pin, gpio_drive_cap_t strength);
 
 // ---- ADC (legacy driver) ----
-typedef enum { ADC_WIDTH_BIT_13 = 4 } adc_bits_width_t;
-typedef enum { ADC_ATTEN_DB_0, ADC_ATTEN_DB_2_5, ADC_ATTEN_DB_6, ADC_ATTEN_DB_11 } adc_atten_t;
+typedef enum { ADC_WIDTH_BIT_13 = 13, ADC_WIDTH_MAX } adc_bits_width_t;
+typedef enum { ADC_ATTEN_DB_0 = 0, ADC_ATTEN_DB_2_5 = 1, ADC_ATTEN_DB_6 = 2, ADC_ATTEN_DB_12 = 3, ADC_ATTEN_DB_11 = ADC_ATTEN_DB_12 } adc_atten_t;
 typedef enum { ADC1_CHANNEL_0, ADC1_CHANNEL_1, ADC1_CHANNEL_2, ADC1_CHANNEL_3, ADC1_CHANNEL_4,
                ADC1_CHANNEL_5, ADC1_CHANNEL_6, ADC1_CHANNEL_7, ADC1_CHANNEL_8, ADC1_CHANNEL_9 } adc1_channel_t;
 typedef enum { ADC2_CHANNEL_0, ADC2_CHANNEL_1, ADC2_CHANNEL_2, ADC2_CHANNEL_3, ADC2_CHANNEL_4,

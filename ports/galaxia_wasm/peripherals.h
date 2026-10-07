@@ -11,4 +11,7 @@ void peripherals_poll(void);
 // GPIO direction change, for the LED light measurement
 void peripherals_gpio_direction(gpio_num_t pin, gpio_mode_t mode);
 
+// The level a DAC channel holds on its pad (0-255), -1 if it does not drive it
+int dac_pad_level(int pin);
+
 #endif

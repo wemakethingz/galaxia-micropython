@@ -134,7 +134,8 @@ await t1.shot("1-tilted.png");
 await t1.press('.hwbtn[data-pin="45"]');
 await sleep(400);
 const led = await t1.evaluate("document.getElementById('led').style.background");
-check("button A: LED blue", /rgb\(0, 0, 255\)/.test(led), led);
+// (set_colors(0, 0, 255) is a 50 % duty on the board, shown 186 by the page)
+check("button A: LED blue", /rgb\(0, 0, 186\)/.test(led), led);
 
 // Touch pad N: prints the compass heading; set the heading to 120 first
 await t1.evaluate("(() => { const s = document.getElementById('s-head'); s.value = 120; s.dispatchEvent(new Event('input')); })()");
@@ -199,6 +200,23 @@ await sleep(3500);
 px = await t1.screenPixels(0, 40, 160, 40);
 check("after reload: main.py runs again (green square)", px[1] > 10, JSON.stringify(px));
 await t1.shot("3-after-reload.png");
+
+// --- machine.reset(): the board resets, the RTC memory is kept
+await t1.typed("\x03\x03import machine\rmachine.RTC().memory(b'apres reset')\rmachine.reset()\r");
+check("machine.reset(): the board restarts", (await t1.waitRunning()).startsWith("en marche"));
+await sleep(3500);
+await t1.typed("\x03\x03import machine\rprint('RC', machine.reset_cause() == machine.HARD_RESET, machine.RTC().memory())\r");
+check("after machine.reset(): HARD_RESET, RTC memory kept", await t1.waitTerm(/RC True b'apres reset'/), (await t1.term()).split("\n").slice(-2).join(" | "));
+
+// --- deep sleep: the page shows the board off, then it boots again
+await t1.typed("machine.deepsleep(1500)\r");
+await sleep(500);
+const sleepStatus = await t1.evaluate("document.getElementById('status').textContent");
+check("deepsleep: the board is off", sleepStatus === "en sommeil profond", sleepStatus);
+check("deepsleep: it wakes on its timer", (await t1.waitRunning()).startsWith("en marche"));
+await sleep(3500);
+await t1.typed("\x03\x03import machine\rprint('WK', machine.reset_cause() == machine.DEEPSLEEP_RESET)\r");
+check("after deepsleep: DEEPSLEEP_RESET", await t1.waitTerm(/WK True/), (await t1.term()).split("\n").slice(-2).join(" | "));
 
 // --- crash: infinite recursion, the board reboots with its files
 await t1.typed("\x03\x03\x05def r(n):\r    return r(n + 1)\rr(0)\r\x04");

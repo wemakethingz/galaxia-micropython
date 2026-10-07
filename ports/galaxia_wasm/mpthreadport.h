@@ -4,6 +4,7 @@
 #define MICROPY_INCLUDED_GALAXIA_MPTHREADPORT_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef struct _mp_thread_mutex_t {
     volatile int locked;
@@ -16,5 +17,8 @@ void mp_thread_deinit(void);
 // Waits at most `ms` (it may return earlier, when an input comes): the other threads
 // run meanwhile, the Worker sleeps when none can
 void galaxia_thread_sleep_ms(int ms);
+
+// FreeRTOS tasks of the ESP-IDF drivers (UART events): fibers too, outside Python
+bool galaxia_in_task(void);
 
 #endif

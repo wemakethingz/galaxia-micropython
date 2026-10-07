@@ -40,7 +40,7 @@ addToLibrary({
     // Level of a GPIO input set by the page (buttons are active low: 1 = released)
     galaxia_js_gpio_get: (pin) => {
         const v = Module.galaxia.gpio[pin];
-        return v === undefined ? 1 : v;
+        return v === undefined ? -1 : v;     // -1: the page does not drive this pad
     },
 
     // Next GPIO whose level the page changed (edge for the interrupt handlers), or -1
