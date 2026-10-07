@@ -11,7 +11,6 @@
 #include "mpthreadport.h"
 
 extern int mp_js_ticks_ms(void);
-extern uint32_t mp_js_ticks_us(void);
 extern double mp_js_time_ms(void);
 extern void galaxia_js_stdout(const char *ptr, size_t len);
 extern int galaxia_js_stdin_byte(void);
@@ -110,8 +109,9 @@ mp_uint_t mp_hal_ticks_ms(void) {
     return mp_js_ticks_ms();
 }
 
+// The same clock as esp_timer (fine between the browser clock's ticks)
 mp_uint_t mp_hal_ticks_us(void) {
-    return mp_js_ticks_us();
+    return (mp_uint_t)esp_timer_get_time();
 }
 
 // The CPU's cycle counter (CCOUNT), at the CPU frequency

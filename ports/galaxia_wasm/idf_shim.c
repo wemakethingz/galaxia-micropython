@@ -42,8 +42,19 @@ const char *esp_err_to_name(esp_err_t code) {
 
 // ---- time ----
 
+// The browser's clock is coarse in a Worker without cross-origin isolation (100 us in
+// Chrome, 1 ms in Firefox): between its ticks the time still moves on, by 1 us at
+// each read, as a CPU spinning on its timer sees it, at most one tick ahead (code
+// that times something short in a loop, as thingz_led's light measurement, works)
 int64_t esp_timer_get_time(void) {
-    return (int64_t)(emscripten_get_now() * 1000.0);
+    static int64_t last;
+    const int64_t real = (int64_t)(emscripten_get_now() * 1000.0);
+    int64_t t = real > last ? real : last + 1;
+    if (t > real + 1000) {
+        t = last;
+    }
+    last = t;
+    return t;
 }
 
 TickType_t xTaskGetTickCount(void) {

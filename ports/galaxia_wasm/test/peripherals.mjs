@@ -9,6 +9,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // Default: the build of the port in the MicroPython tree, else galaxia_sim's
 const mjs = process.argv[2] || [path.join(here, "../build/galaxia.mjs"), path.join(here, "../../build/wasm/galaxia.mjs")]
     .find((p) => fs.existsSync(p));
+// The clock of a browser Worker without cross-origin isolation: 1 ms steps in
+// Firefox (100 us in Chrome). The board's timings (the light measurement) must hold.
+const realNow = performance.now.bind(performance);
+performance.now = () => Math.floor(realNow());
 const createGalaxia = (await import(mjs)).default;
 
 let out = "";
