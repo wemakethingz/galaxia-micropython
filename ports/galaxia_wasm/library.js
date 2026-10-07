@@ -83,6 +83,41 @@ addToLibrary({
         return n;
     },
 
+    // Wi-Fi network (net.c): send a frame to the other boards, and the next frame
+    // received (its length, or -1)
+    galaxia_js_lan_send: (ptr, len) => Module.galaxia.lanSend && Module.galaxia.lanSend(HEAPU8.slice(ptr, ptr + len)),
+    galaxia_js_lan_next: (ptr, max) => {
+        const f = Module.galaxia.lanIn && Module.galaxia.lanIn.shift();
+        if (!f) {
+            return -1;
+        }
+        const n = Math.min(f.length, max);
+        HEAPU8.set(f.subarray(0, n), ptr);
+        return n;
+    },
+    // The page's access points (the classroom's Wi-Fi): {ssid, password, authmode,
+    // channel}; 0 when there is no access point `index`
+    galaxia_js_page_ap__deps: ["$stringToUTF8"],
+    galaxia_js_page_ap: (index, ssidPtr, passwordPtr, authmodePtr, channelPtr) => {
+        const ap = (Module.galaxia.aps || [])[index];
+        if (!ap) {
+            return 0;
+        }
+        stringToUTF8(ap.ssid || "", ssidPtr, 33);
+        stringToUTF8(ap.password || "", passwordPtr, 65);
+        HEAP32[authmodePtr >> 2] = ap.authmode ?? (ap.password ? 3 : 0);
+        HEAP32[channelPtr >> 2] = ap.channel || 6;
+        return 1;
+    },
+
+    // The page router's DNS: the address of a name (the virtual broker's names),
+    // 0 if it does not know it
+    galaxia_js_dns__deps: ["$UTF8ToString"],
+    galaxia_js_dns: (namePtr) => {
+        const ip = (Module.galaxia.hosts || {})[UTF8ToString(namePtr).toLowerCase()];
+        return ip ? (ip[0] | (ip[1] << 8) | (ip[2] << 16) | (ip[3] << 24)) >>> 0 : 0;
+    },
+
     // This board's MAC address (6 bytes)
     galaxia_js_mac: (ptr) => HEAPU8.set(Module.galaxia.mac, ptr),
 

@@ -50,6 +50,9 @@ textarea { width: 100%; min-height: 220px; font: 13px/1.4 ui-monospace, Menlo, C
 .sensor input[type=range] { width: 100%; }
 .sensor .val { text-align: right; font-variant-numeric: tabular-nums; font-size: 13.5px; }
 .note { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+.field { display: grid; grid-template-columns: 120px 1fr; gap: 10px; align-items: center; margin: 6px 0; }
+.mqtt-log { background: var(--console-bg); color: var(--console-text); font: 12.5px/1.4 ui-monospace, Menlo, Consolas, monospace; height: 150px; overflow: auto; padding: 6px 8px; border-radius: 7px; margin-top: 8px; white-space: pre-wrap; word-break: break-all; }
+.field input, .field select { font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); min-width: 0; }
 @media (max-width: 520px) { .sensor { grid-template-columns: 90px 1fr 56px; } .hwbtn { width: 52px; height: 52px; } }
 </style>
 </head>
@@ -99,6 +102,31 @@ textarea { width: 100%; min-height: 220px; font: 13px/1.4 ui-monospace, Menlo, C
       <p class="note">Température : celle de la puce, le firmware en retire son décalage de calibration
         (<code>set_temperature_offset</code>), comme sur la carte.</p>
     </section>
+    <section class="panel">
+      <h2>Wi-Fi de la classe</h2>
+      <div class="field"><label for="ap-ssid">Nom (SSID)</label><input id="ap-ssid" autocomplete="off" spellcheck="false" maxlength="32"></div>
+      <div class="field"><label for="ap-pass">Mot de passe</label><input id="ap-pass" autocomplete="off" spellcheck="false" maxlength="63" placeholder="vide : réseau ouvert"></div>
+      <div class="field"><label for="ap-chan">Canal</label><select id="ap-chan"></select></div>
+      <div class="row"><button class="act small" id="ap-apply">Appliquer</button><span class="note" id="ap-msg" style="margin:0"></span></div>
+      <p class="note">Un point d'accès simulé, sans Internet, partagé par les cartes ouvertes dans ce
+        navigateur. Les cartes peuvent aussi créer leur propre point d'accès
+        (<code>network.WLAN(network.AP_IF)</code>).</p>
+    </section>
+    <section class="panel">
+      <h2>Broker MQTT <span class="note" id="mq-status" style="font-weight:400"></span></h2>
+      <div class="field"><label for="mq-names">Noms</label><input id="mq-names" autocomplete="off" spellcheck="false"></div>
+      <div class="row" style="margin-top:4px"><button class="act small" id="mq-apply">Appliquer</button><span class="note" id="mq-msg" style="margin:0"></span></div>
+      <div class="mqtt-log" id="mq-log"></div>
+      <div class="row">
+        <input id="mq-topic" placeholder="sujet" autocomplete="off" spellcheck="false" style="flex:1;min-width:90px;font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text)">
+        <input id="mq-payload" placeholder="message" autocomplete="off" spellcheck="false" style="flex:1;min-width:90px;font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text)">
+        <label class="note" style="margin:0"><input type="checkbox" id="mq-retain"> retenu</label>
+        <button class="act small" id="mq-publish">Publier</button>
+      </div>
+      <p class="note">Le seul hôte de l'Internet simulé, derrière le Wi-Fi de la classe : ces noms
+        mènent à lui (port 1883, sans TLS). MQTT 3.1.1, sessions propres, messages retenus,
+        dernière volonté. Un des onglets ouverts l'héberge.</p>
+    </section>
   </div>
   <div class="col">
     <section class="panel">
@@ -116,6 +144,7 @@ textarea { width: 100%; min-height: 220px; font: 13px/1.4 ui-monospace, Menlo, C
   </div>
 </main>
 <script type="module">
+import { Broker, BROKER_IP, DEFAULT_BROKER_NAMES } from "./broker.js";
 const $ = (id) => document.getElementById(id);
 
 $("code").value = `from thingz import *
@@ -138,7 +167,7 @@ while True:
     time.sleep(0.03)
 `;
 
-/* ---------- saved board state (files of the FAT partition, log) ---------- */
+/* ---------- saved board state (files of the FAT partition, log, EEPROM) ---------- */
 const DB = { name: "galaxia-wasm", store: "board", key: "state" };
 function db() {
   return new Promise((resolve, reject) => {
@@ -162,7 +191,7 @@ async function saveState(state) {
   try {
     const d = await db();
     const tx = d.transaction(DB.store, "readwrite");
-    if (state) tx.objectStore(DB.store).put({ flash: state.flash, log: state.log }, DB.key);
+    if (state) tx.objectStore(DB.store).put({ flash: state.flash, log: state.log, eeprom: state.eeprom }, DB.key);
     else tx.objectStore(DB.store).delete(DB.key);
   } catch { /* private mode: the files only live until the tab closes */ }
 }
@@ -215,9 +244,10 @@ function startBoard(state = {}) {
     }
   };
   worker.onerror = (e) => { $("status").textContent = "erreur : " + e.message; };
-  worker.postMessage({ type: "start", state }, [state.flash, state.log].filter(Boolean).map((a) => a.buffer));
+  worker.postMessage({ type: "start", state }, [state.flash, state.log, state.eeprom].filter(Boolean).map((a) => a.buffer));
   showLed(0, 0, 0);
   sendSensors();
+  sendNet();
 }
 const ctx = $("screen").getContext("2d");
 function send(text) {
@@ -316,6 +346,106 @@ function accelFromTilt() {
 function sendAccel(v = accelFromTilt()) {
   worker && worker.postMessage({ type: "accel", x: v[0], y: v[1], z: v[2] });
 }
+/* ---------- the classroom's Wi-Fi: one access point, shared by the tabs ---------- */
+const AP_KEY = "galaxia-aps";
+const DEFAULT_APS = [{ ssid: "Classe", password: "galaxia2026", authmode: 3, channel: 6 }];
+function loadAps() {
+  try { const a = JSON.parse(localStorage.getItem(AP_KEY)); if (Array.isArray(a)) return a; } catch { /* default */ }
+  return DEFAULT_APS;
+}
+function showAps() {
+  const ap = loadAps()[0] || { ssid: "", password: "", channel: 6 };
+  $("ap-ssid").value = ap.ssid; $("ap-pass").value = ap.password || ""; $("ap-chan").value = ap.channel;
+}
+for (let c = 1; c <= 13; c++) $("ap-chan").add(new Option(c, c));
+showAps();
+$("ap-apply").onclick = () => {
+  const ssid = $("ap-ssid").value.trim(), password = $("ap-pass").value;
+  if (password && (password.length < 8 || password.length > 63)) {
+    $("ap-msg").textContent = "mot de passe : 8 à 63 caractères (WPA2)";
+    return;
+  }
+  // WPA2 with a password, else open
+  const aps = ssid ? [{ ssid, password, authmode: password ? 3 : 0, channel: +$("ap-chan").value }] : [];
+  try { localStorage.setItem(AP_KEY, JSON.stringify(aps)); } catch { /* private mode: this tab only */ }
+  sendNet();
+  $("ap-msg").textContent = ssid ? "appliqué" : "point d'accès retiré";
+};
+// Another tab changed it: same air for all the boards
+addEventListener("storage", (e) => {
+  if (e.key === AP_KEY) { showAps(); sendNet(); }
+  if (e.key === BROKER_KEY) { showBrokerNames(); sendNet(); }
+});
+
+/* ---------- the virtual MQTT broker: the Internet behind the classroom's router ---------- */
+const BROKER_KEY = "galaxia-broker-names";
+function brokerNames() {
+  try { const a = JSON.parse(localStorage.getItem(BROKER_KEY)); if (Array.isArray(a)) return a; } catch { /* default */ }
+  return DEFAULT_BROKER_NAMES;
+}
+function hosts() {
+  return Object.fromEntries(brokerNames().map((n) => [n.toLowerCase(), BROKER_IP]));
+}
+// What the board's network needs from the page: the access points, their DNS
+function sendNet() {
+  worker && worker.postMessage({ type: "aps", aps: loadAps(), hosts: hosts() });
+}
+function showBrokerNames() { $("mq-names").value = brokerNames().join(", "); }
+showBrokerNames();
+$("mq-apply").onclick = () => {
+  const names = $("mq-names").value.split(/[\s,;]+/).map((n) => n.trim()).filter(Boolean);
+  try { localStorage.setItem(BROKER_KEY, JSON.stringify(names)); } catch { /* this tab only */ }
+  sendNet();
+  $("mq-msg").textContent = "appliqué";
+};
+const brokerChannel = new BroadcastChannel("galaxia-broker");   // journal and page messages between tabs
+let broker = null;
+function logEvent(e) {
+  const text = e.type === "connect" ? `${e.clientId} connecté (${e.ip})`
+    : e.type === "disconnect" ? `${e.clientId} déconnecté${e.clean ? "" : " (connexion perdue)"}`
+    : e.type === "subscribe" ? `${e.clientId} s'abonne à ${e.topic}`
+    : e.type === "publish" ? `${e.clientId} : ${e.topic} = ${e.payload}${e.retain ? " (retenu)" : ""}` : "";
+  if (!text) return;
+  const log = $("mq-log");
+  const line = document.createElement("div");
+  line.textContent = new Date().toLocaleTimeString() + "  " + text;
+  log.append(line);
+  while (log.childElementCount > 200) log.firstElementChild.remove();
+  log.scrollTop = log.scrollHeight;
+}
+brokerChannel.onmessage = (e) => {
+  if (e.data.type === "page-publish") {
+    broker && broker.publish(e.data.topic, e.data.payload, e.data.retain);
+  } else {
+    logEvent(e.data);
+  }
+};
+// One tab hosts the broker (the first to hold the lock; another one takes over
+// when it closes, as a broker that restarts)
+if (navigator.locks) {
+  $("mq-status").textContent = "— dans un autre onglet";
+  navigator.locks.request("galaxia-broker", () => {
+    const lan = new BroadcastChannel("galaxia-lan");
+    broker = new Broker({
+      send: (f) => lan.postMessage(f),
+      aps: loadAps,
+      log: (e) => { logEvent(e); brokerChannel.postMessage(e); },
+    });
+    lan.onmessage = (e) => broker.receive(e.data);
+    broker.start();
+    $("mq-status").textContent = "— hébergé par cet onglet";
+    return new Promise(() => {});     // held as long as the tab lives
+  });
+} else {
+  $("mq-status").textContent = "— indisponible dans ce navigateur";
+}
+$("mq-publish").onclick = () => {
+  const topic = $("mq-topic").value.trim(), payload = $("mq-payload").value, retain = $("mq-retain").checked;
+  if (!topic || /[+#]/.test(topic)) return;
+  if (broker) broker.publish(topic, payload, retain);
+  else brokerChannel.postMessage({ type: "page-publish", topic, payload, retain });
+};
+
 function sendSensors() {
   sendAccel();
   worker.postMessage({ type: "compass", heading: +$("s-head").value });

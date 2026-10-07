@@ -79,6 +79,24 @@ await sleep(600);
 v = await py("compass.heading()");
 check("compass heading 90", Math.abs(Number(v) - 90) < 3, v);
 
+// Compass calibration: the firmware writes it to the EEPROM (hal/eeprom.c), the
+// headings set afterwards take it into account. The board turns during the calibration.
+const eepromAt = (i) => M.HEAPU8[M._galaxia_eeprom_image() + i];
+check("EEPROM: PCB 1.0.9, not calibrated", eepromAt(0) === 1 && eepromAt(1) === 3 && eepromAt(3) === 0xff,
+    [0, 1, 3].map(eepromAt).join(","));
+for (const b of Buffer.from("compass.calibrate(2, 40); print('CAL', 'done')\r")) galaxia.stdin.push(b);
+const t0 = Date.now();
+while (!/^CAL done/m.test(out) && Date.now() - t0 < 10000) {
+    M._galaxia_set_compass(((Date.now() - t0) / 2000) * 720, 300, -400);
+    await sleep(20);
+}
+check("compass calibrated, stored in the EEPROM", /^CAL done/m.test(out) && eepromAt(3) !== 0xff,
+    [3, 4, 5, 6].map(eepromAt).join(","));
+M._galaxia_set_compass(200, 300, -400);
+await sleep(300);
+v = await py("compass.heading()");
+check("compass heading 200 after calibration", Math.abs(Number(v) - 200) < 3, v);
+
 // Touch pad N (GPIO 8)
 galaxia.touch[8] = 1;
 galaxia.touchChanged.push(8);

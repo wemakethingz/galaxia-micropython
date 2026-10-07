@@ -1,6 +1,6 @@
-// Board services the Thingz modules call, for the WebAssembly build: settings
-// (thingz_memory, over the in-memory NVS of idf_shim.c) and the last exception
-// shown by the screen header (debug_mode). The debug menu itself is not built.
+// Board services the Thingz modules call, for the WebAssembly build: the last
+// exception shown by the screen header (debug_mode). The debug menu itself is not
+// built. (thingz_memory is the firmware's, over the EEPROM of peripherals.c.)
 
 #include <string.h>
 
@@ -9,33 +9,6 @@
 #include "common-thingz/thingz_memory/thingz_memory.h"
 #include "common-thingz/thingz_screen/thingz_screen.h"
 #include "debug_mode/debug_mode.h"
-
-// ---- thingz_memory ----
-
-static nvs_handle nvs_main = 1;
-
-void thingz_memory_init(void) {
-}
-
-nvs_handle *thingz_memory_get_handle(void) {
-    return &nvs_main;
-}
-
-const char *thingz_memory_get_pcb_version_name(void) {
-    return "web";
-}
-
-int32_t thingz_memory_get_setting(const char *name, void *value) {
-    return nvs_get_u32(nvs_main, name, (uint32_t *)value);
-}
-
-int32_t thingz_memory_set_setting(const char *name, void *value) {
-    return nvs_set_u32(nvs_main, name, *(uint32_t *)value);
-}
-
-uint8_t thingz_memory_is_eeprom_corrupt(void) {
-    return 0;
-}
 
 // ---- debug_mode: the last exception (same logic as debug_mode/debug_mode.c) ----
 

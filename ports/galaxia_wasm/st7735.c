@@ -84,11 +84,15 @@ static void put_pixel(uint16_t rgb565) {
         s.gram[row][col] = rgb565;
         changed();
     }
-    if (s.x < s.xe) {
+    // The address counters count up (16 bits, wrapping) until the end address, even from
+    // a start beyond it: the firmware's splash text starts at a "negative" row when it is
+    // wider than the screen (RASET 0xFFEC..159), the rows out of the GRAM are dropped
+    // and the rest of the text is drawn, as on the board.
+    if (s.x != s.xe) {
         s.x++;
     } else {
         s.x = s.xs;
-        s.y = s.y < s.ye ? s.y + 1 : s.ys;
+        s.y = s.y != s.ye ? s.y + 1 : s.ys;
     }
 }
 

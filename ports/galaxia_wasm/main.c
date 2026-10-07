@@ -84,6 +84,7 @@ static void mount_root(void) {
 
 EMSCRIPTEN_KEEPALIVE
 void galaxia_main(void) {
+    mp_thread_init();
     char *heap = malloc(HEAP_SIZE);
     mkdir("/spiffs", 0777);     // the SPIFFS partition (thingz.log), Emscripten's file system
 
@@ -101,6 +102,7 @@ void galaxia_main(void) {
     #endif
 
 soft_reset:
+    mp_thread_init();
     mp_stack_ctrl_init();
     mp_stack_set_limit(C_STACK_LIMIT);
     gc_init(heap, heap + HEAP_SIZE);
@@ -151,6 +153,7 @@ soft_reset:
 
 soft_reset_exit:
     gc_collect();
+    mp_thread_deinit();     // as the board: the other threads stop
     gc_sweep_all();
     thingz_deinit();
     mp_hal_stdout_tx_str("Redémarrage du programme\r\n");
@@ -167,6 +170,7 @@ void gc_collect(void) {
     gc_collect_start();
     emscripten_scan_stack(gc_scan_func);
     emscripten_scan_registers(gc_scan_func);
+    mp_thread_gc_others();
     gc_collect_end();
 }
 

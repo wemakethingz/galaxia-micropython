@@ -1,6 +1,6 @@
 // End-to-end check of the WebAssembly Galaxia page in headless Chrome (DevTools
 // protocol, no dependency): boot, the example program (tilt, LED, touch), the radio
-// between two tabs, files kept across a reload, a firmware crash and reboot.
+// the Wi-Fi (TCP) and MQTT between two tabs, files and EEPROM kept across a reload, a firmware crash and reboot.
 //   node wasm/test/browser_check.mjs URL OUT_DIR
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -158,11 +158,43 @@ await sleep(500);
 await t1.typed("print('RX', radio.receive())\r");
 check("radio: tab 1 receives tab 2's message", await t1.waitTerm(/RX \[b'.*', 'ping depuis 2'\]/), (await t1.term()).split("\n").slice(-2).join(" | "));
 
+// --- Wi-Fi between the two tabs: both on the page's access point, TCP from 2 to 1
+for (const t of [t1, t2]) {
+    await t.typed("import network, socket, time\rw = network.WLAN(network.STA_IF); w.connect('Classe', 'galaxia2026')\r");
+}
+await t1.typed("while not w.isconnected(): time.sleep(0.1)\r\rprint('IP', w.ifconfig()[0])\r");
+check("Wi-Fi: tab 1 connected", await t1.waitTerm(/^IP 192\.168\.1\.\d+/m, 10000), (await t1.term()).split("\n").slice(-2).join(" | "));
+const ip1 = /^IP (192\.168\.1\.\d+)/m.exec(await t1.term())[1];
+await t1.typed("srv = socket.socket(); srv.bind(('', 8080)); srv.listen(1)\r");
+await t2.typed("while not w.isconnected(): time.sleep(0.1)\r\r");
+await sleep(3000);
+await t2.typed(`c = socket.socket(); c.connect(('${ip1}', 8080)); c.send(b'bonjour onglet 1')\r`);
+await t1.typed("cl, a = srv.accept(); print('TCP', cl.recv(100)); cl.close(); srv.close()\r");
+check("Wi-Fi: TCP from tab 2 to tab 1", await t1.waitTerm(/TCP b'bonjour onglet 1'/, 10000), (await t1.term()).split("\n").slice(-2).join(" | "));
+
+// --- MQTT through the virtual broker hosted by one of the tabs
+await t1.typed("from umqtt.simple import MQTTClient\rm = MQTTClient('onglet1', 'broker.hivemq.com'); _ = m.connect(); m.set_callback(lambda t, v: print('MQTT', t, v)); m.subscribe('classe/test')\r");
+await sleep(1500);
+await t2.typed("from umqtt.simple import MQTTClient\rm = MQTTClient('onglet2', 'test.mosquitto.org'); _ = m.connect(); m.publish('classe/test', 'bonjour MQTT')\r");
+await sleep(1500);
+await t1.typed("_ = m.wait_msg()\r");
+check("MQTT: tab 1 receives tab 2's message through the broker", await t1.waitTerm(/MQTT b'classe\/test' b'bonjour MQTT'/, 10000), (await t1.term()).split("\n").slice(-2).join(" | "));
+const mqLog = await t1.evaluate("document.getElementById('mq-log').textContent");
+check("MQTT: the page's broker log", /onglet2 : classe\/test = bonjour MQTT/.test(mqLog), mqLog.slice(-120));
+
 // --- files kept: reload tab 1, main.py runs again
 await t1.evaluate("document.getElementById('reboot').click()");
 await sleep(500);
 await t1.send("Page.reload");
 check("reload", (await t1.waitRunning()).startsWith("en marche"));
+const eeprom = await t1.evaluate(`new Promise((resolve) => {
+    const req = indexedDB.open("galaxia-wasm", 1);
+    req.onsuccess = () => {
+        const get = req.result.transaction("board").objectStore("board").get("state");
+        get.onsuccess = () => resolve(get.result && get.result.eeprom ? Array.from(get.result.eeprom.slice(0, 3)) : null);
+    };
+})`);
+check("EEPROM saved with the files (PCB 1.0.9)", eeprom && eeprom[0] === 1 && eeprom[1] === 3, JSON.stringify(eeprom));
 await sleep(3500);
 px = await t1.screenPixels(0, 40, 160, 40);
 check("after reload: main.py runs again (green square)", px[1] > 10, JSON.stringify(px));

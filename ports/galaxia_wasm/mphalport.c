@@ -7,6 +7,7 @@
 #include "py/stream.h"
 #include "shared/runtime/interrupt_char.h"
 #include "idf_shim.h"
+#include "mpthreadport.h"
 
 extern int mp_js_ticks_ms(void);
 extern uint32_t mp_js_ticks_us(void);
@@ -32,6 +33,12 @@ static void check_interrupt(void) {
     }
 }
 
+// The Worker's event loop just had a turn (a real sleep, not a switch to another
+// thread)
+void galaxia_note_yield(void) {
+    last_yield = mp_js_ticks_ms();
+}
+
 void galaxia_poll(void) {
     idf_shim_poll();
     uint32_t now = mp_js_ticks_ms();
@@ -51,10 +58,12 @@ int mp_hal_stdin_rx_chr(void) {
         }
         idf_shim_poll();
         mp_handle_pending(true);
-        // Wake for the next timer (screen refresh every 80 ms) or a key
+        // Wake for the next timer (screen refresh every 80 ms) or a key; the other
+        // threads run meanwhile (the board releases the GIL while it waits for input)
         int wait = idf_shim_next_timer_ms();
-        galaxia_js_sleep(wait < 0 || wait > 50 ? 50 : wait);
-        last_yield = mp_js_ticks_ms();
+        MP_THREAD_GIL_EXIT();
+        galaxia_thread_sleep_ms(wait < 0 || wait > 50 ? 50 : wait);
+        MP_THREAD_GIL_ENTER();
     }
 }
 
@@ -78,8 +87,9 @@ void mp_hal_delay_ms(mp_uint_t ms) {
         if (next >= 0 && next < wait) {
             wait = next;
         }
-        galaxia_js_sleep(wait);
-        last_yield = mp_js_ticks_ms();
+        MP_THREAD_GIL_EXIT();
+        galaxia_thread_sleep_ms(wait);
+        MP_THREAD_GIL_ENTER();
         check_interrupt();
     }
 }

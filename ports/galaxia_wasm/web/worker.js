@@ -1,8 +1,9 @@
 // Web Worker running one WebAssembly Galaxia.
 //
 // Messages from the page:
-//   {type: "start", state}                  boot; state = {flash, log, mac} kept across
-//                                           reboots (FAT image, SPIFFS log, MAC address)
+//   {type: "start", state}                  boot; state = {flash, log, eeprom, mac} kept
+//                                           across reboots (FAT image, SPIFFS log, settings
+//                                           EEPROM, MAC address)
 //   {type: "in", data: Uint8Array}          bytes typed on the REPL
 //   {type: "gpio", pin, level}              buttons A (45) / B (43): 0 = pressed
 //   {type: "touch", pad, touched}           touch pads N 8, S 4, E 5, W 9
@@ -11,6 +12,9 @@
 //   {type: "magnetic", x, y, z}             raw magnetic field, milligauss, magnetometer axes
 //   {type: "temperature", value}            chip temperature, degrees C
 //   {type: "light", value}                  light level on the LED, 0-255
+//   {type: "aps", aps, hosts}               the page's Wi-Fi access points:
+//                                           [{ssid, password, authmode, channel}], and
+//                                           the names their router's DNS knows
 //   {type: "get-state"}                     answered by {type: "state", state}
 // Messages to the page:
 //   {type: "ready"}                         booted (main.py or the REPL comes next)
@@ -28,6 +32,8 @@ import createGalaxia from "./galaxia.mjs";
 let Module = null;
 let ended = false;
 const radio = new BroadcastChannel("galaxia-radio");
+// Wi-Fi frames (net.c): the boards of the same browser are on the same air
+const lan = new BroadcastChannel("galaxia-lan");
 
 const galaxia = {
     stdin: [],
@@ -53,6 +59,10 @@ const galaxia = {
     led: (r, g, b) => postMessage({ type: "led", r, g, b }),
     sound: (sound) => postMessage({ type: "sound", sound }, sound ? [sound.samples.buffer] : []),
     radioSend: (packet) => radio.postMessage(packet),
+    lanIn: [],
+    lanSend: (frame) => lan.postMessage(frame),
+    aps: [],                    // the page's access points (the classroom's Wi-Fi)
+    hosts: {},                  // their router's DNS: name -> [a, b, c, d]
     restart: () => crashed("esp_restart"),
 };
 
@@ -64,12 +74,22 @@ radio.onmessage = (e) => {
     wake();
 };
 
-// What survives a reboot: the FAT partition, the log, the MAC address
+lan.onmessage = (e) => {
+    galaxia.lanIn.push(e.data);
+    if (galaxia.lanIn.length > 256) {
+        galaxia.lanIn.shift();          // nobody reads: lost in the air
+    }
+    wake();
+};
+
+// What survives a reboot: the FAT partition, the log, the EEPROM, the MAC address
 function boardState() {
-    const state = { mac: galaxia.mac, flash: null, log: null };
+    const state = { mac: galaxia.mac, flash: null, log: null, eeprom: null };
     try {
         const ptr = Module._galaxia_flash_image();
         state.flash = Module.HEAPU8.slice(ptr, ptr + Module._galaxia_flash_size());
+        const eeprom = Module._galaxia_eeprom_image();
+        state.eeprom = Module.HEAPU8.slice(eeprom, eeprom + Module._galaxia_eeprom_size());
     } catch { /* memory unusable */ }
     try {
         state.log = Module.FS.readFile("/spiffs/data.csv");
@@ -77,7 +97,7 @@ function boardState() {
     return state;
 }
 
-const transfers = (state) => [state.flash, state.log].filter(Boolean).map((a) => a.buffer);
+const transfers = (state) => [state.flash, state.log, state.eeprom].filter(Boolean).map((a) => a.buffer);
 
 // The firmware aborted (as the board panics and reboots): hand the state to the page
 function crashed(reason) {
@@ -115,6 +135,11 @@ async function start(state = {}) {
             onAbort: (what) => crashed(what),
         });
         Module.galaxia = galaxia;
+        if (state.eeprom) {
+            // before the compass field: it depends on the calibration stored there
+            const ptr = Module._galaxia_eeprom_image();
+            Module.HEAPU8.set(state.eeprom.subarray(0, Module._galaxia_eeprom_size()), ptr);
+        }
         Module._galaxia_set_accel(...galaxia.accel);
         if (galaxia.magnetic) {
             Module._galaxia_set_magnetic(...galaxia.magnetic);
@@ -171,6 +196,10 @@ onmessage = (e) => {
             return;
         case "temperature":
             galaxia.temperature = m.value;
+            return;
+        case "aps":
+            galaxia.aps = m.aps || [];
+            galaxia.hosts = m.hosts || {};
             return;
         case "light":
             galaxia.light = m.value;

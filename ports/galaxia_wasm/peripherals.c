@@ -1,13 +1,14 @@
 // Peripherals of the Galaxia below the Thingz modules, for the WebAssembly build
 // (declarations in idf/idf_periph.h). The Thingz drivers run unchanged on top:
 //   - touch sensor: pads N/S/E/W (GPIO 8, 4, 5, 9), touched from the page;
-//   - I2C0: LIS2DH12 accelerometer (0x19) and QMC6310 magnetometer (0x1C), the
-//     register models of galaxia_sim's QEMU machine (hw/sensor/ in patches/);
+//   - I2C0, as on a PCB 1.0.9: LIS2DH12 accelerometer (0x19), LIS2MDL magnetometer
+//     (0x1E) and the settings EEPROM (0x50); the LIS2DH12 is the register model of
+//     galaxia_sim's QEMU machine (hw/sensor/ in patches/);
 //   - LEDC: the RGB LED (GPIO 41/40/39, common 10), shown by the page; its light
 //     measurement (LED discharge timed through ADC1 channel 9) follows the light
 //     level set in the page;
 //   - DAC: the sound, as the waveform the firmware writes, played by the page;
-//   - ESP-NOW: broadcast between the boards of the same browser (BroadcastChannel).
+// (Wi-Fi, ESP-NOW and the network: net.c)
 // The page sets the inputs through the galaxia_set_* functions and the input queues
 // of library.js; peripherals_poll() delivers them from idf_shim_poll().
 
@@ -26,9 +27,6 @@ extern void galaxia_js_led(int r, int g, int b);
 extern void galaxia_js_sound_loop(int rate, const uint8_t *samples, int len);
 extern void galaxia_js_sound_chunk(int rate, const uint8_t *samples, int len);
 extern void galaxia_js_sound_stop(void);
-extern void galaxia_js_radio_send(int channel, const uint8_t *mac, const uint8_t *data, int len);
-extern int galaxia_js_radio_next(uint8_t *data, int max, uint8_t *mac, int *channel);
-extern void galaxia_js_mac(uint8_t *mac);
 extern void galaxia_js_sleep(int ms);
 
 #define BIT(n) (1u << (n))
@@ -198,82 +196,165 @@ static void lis_tx(uint8_t data) {
     }
 }
 
-// --- QMC6310 magnetometer (galaxia_sim hw/sensor/qmc6310.c) ---
-#define QMC_CHIP_ID     0x00
-#define QMC_X_LSB       0x01
-#define QMC_Z_MSB       0x06
-#define QMC_STATUS      0x09
-#define QMC_CTRL1       0x0A
-#define QMC_CTRL2       0x0B
+// --- LIS2MDL magnetometer (0x1E), the compass of PCB 1.0.9 and 1.1.0 ---
+// Registers of the LIS2MDL datasheet: fixed 1.5 mG/LSB, the hard-iron offset
+// registers subtracted from the output, address always auto-incremented,
+// continuous / single / idle modes (CFG_REG_A MD), soft reset.
+#define MDL_OFFSET_X_L  0x45
+#define MDL_OFFSET_Z_H  0x4A
+#define MDL_WHO_AM_I    0x4F
+#define MDL_CFG_REG_A   0x60
+#define MDL_INT_CTRL    0x63
+#define MDL_STATUS      0x67
+#define MDL_OUTX_L      0x68
+#define MDL_OUTZ_H      0x6D
+#define MDL_TEMP_OUT_L  0x6E
+#define MDL_TEMP_OUT_H  0x6F
+#define MDL_SOFT_RST    BIT(5)
+#define MDL_REBOOT      BIT(6)
+#define MDL_MD_MASK     0x03
+#define MDL_MD_CONTINUOUS 0x00
+#define MDL_MD_SINGLE   0x01
+#define MDL_MD_IDLE     0x03
 
 static struct {
-    uint8_t regs[0x30];
+    uint8_t regs[0x70];
     uint8_t pointer;
     bool pointer_set;
+    int16_t out[3];         // last measurement, LSB
+    bool measured;          // a measurement since the reset (else the output is 0)
     int32_t mgauss[3];      // field, milligauss, chip axes
-} qmc = { .mgauss = { 0, 300, -400 } };   // heading 0 (thingz.compass.heading() = atan2(x, y))
+} mdl = { .regs = { [MDL_CFG_REG_A] = MDL_MD_IDLE, [MDL_INT_CTRL] = 0xE0 } };   // power-on values
 
-static int16_t qmc_output(int axis, bool *ovfl) {
-    static const int lsb_per_4mg[] = { 4, 10, 15, 60 };
-    const int64_t v = (int64_t)qmc.mgauss[axis] * lsb_per_4mg[(qmc.regs[QMC_CTRL2] >> 2) & 3] / 4;
-    if (v > INT16_MAX || v < INT16_MIN) {
-        *ovfl = true;
-        return v > 0 ? INT16_MAX : INT16_MIN;
-    }
-    return (int16_t)v;
+static void mdl_reset(void) {
+    memset(mdl.regs, 0, sizeof(mdl.regs));
+    mdl.regs[MDL_CFG_REG_A] = MDL_MD_IDLE;
+    mdl.regs[MDL_INT_CTRL] = 0xE0;
+    memset(mdl.out, 0, sizeof(mdl.out));
+    mdl.measured = false;
 }
 
-static uint8_t qmc_read_reg(uint8_t reg) {
-    bool ovfl = false;
-    if (reg == QMC_CHIP_ID) {
-        return 0x80;
+static void mdl_measure(void) {
+    for (int axis = 0; axis < 3; axis++) {
+        const int16_t offset = (int16_t)(mdl.regs[MDL_OFFSET_X_L + 2 * axis] | (mdl.regs[MDL_OFFSET_X_L + 2 * axis + 1] << 8));
+        long v = lround(mdl.mgauss[axis] / 1.5) - offset;
+        mdl.out[axis] = v > INT16_MAX ? INT16_MAX : v < INT16_MIN ? INT16_MIN : (int16_t)v;
     }
-    if (reg >= QMC_X_LSB && reg <= QMC_Z_MSB) {
-        const int16_t v = qmc_output((reg - QMC_X_LSB) / 2, &ovfl);
-        return (reg - QMC_X_LSB) & 1 ? (uint8_t)(v >> 8) : (uint8_t)v;
+    mdl.measured = true;
+}
+
+static uint8_t mdl_read_reg(uint8_t reg) {
+    const uint8_t md = mdl.regs[MDL_CFG_REG_A] & MDL_MD_MASK;
+    if (reg == MDL_WHO_AM_I) {
+        return 0x40;
     }
-    if (reg == QMC_STATUS) {
-        uint8_t st = (qmc.regs[QMC_CTRL1] & 3) ? 1 : 0;    // DRDY unless suspended
-        for (int i = 0; i < 3; i++) {
-            qmc_output(i, &ovfl);
+    if (reg == MDL_STATUS) {
+        return md == MDL_MD_CONTINUOUS || mdl.measured ? 0x0f : 0x00;    // ZYXDA, X/Y/Z DA
+    }
+    if (reg >= MDL_OUTX_L && reg <= MDL_OUTZ_H) {
+        if (reg == MDL_OUTX_L && md == MDL_MD_CONTINUOUS) {
+            mdl_measure();          // a burst read from OUTX_L gets one measurement
         }
-        return st | (ovfl ? 2 : 0);
+        const int16_t v = mdl.out[(reg - MDL_OUTX_L) / 2];
+        return (reg - MDL_OUTX_L) & 1 ? (uint8_t)(v >> 8) : (uint8_t)v;
     }
-    return reg < sizeof(qmc.regs) ? qmc.regs[reg] : 0;
+    if (reg == MDL_TEMP_OUT_L || reg == MDL_TEMP_OUT_H) {
+        return 0;                   // 25 degrees C
+    }
+    return reg < sizeof(mdl.regs) ? mdl.regs[reg] : 0;
 }
 
-static void qmc_start(void) {
-    qmc.pointer_set = false;
+static void mdl_start(void) {
+    mdl.pointer_set = false;
 }
 
-static uint8_t qmc_rx(void) {
-    const uint8_t v = qmc_read_reg(qmc.pointer);
-    qmc.pointer = (qmc.pointer + 1) % sizeof(qmc.regs);
+static uint8_t mdl_rx(void) {
+    const uint8_t v = mdl_read_reg(mdl.pointer);
+    mdl.pointer = (mdl.pointer + 1) & 0x7f;
     return v;
 }
 
-static void qmc_tx(uint8_t data) {
-    if (!qmc.pointer_set) {
-        qmc.pointer = data % sizeof(qmc.regs);
-        qmc.pointer_set = true;
+static void mdl_tx(uint8_t data) {
+    if (!mdl.pointer_set) {
+        mdl.pointer = data & 0x7f;
+        mdl.pointer_set = true;
         return;
     }
-    if (qmc.pointer == QMC_CTRL2 && (data & BIT(7))) {
-        memset(qmc.regs, 0, sizeof(qmc.regs));      // soft reset
-    } else {
-        qmc.regs[qmc.pointer] = data;
+    const uint8_t reg = mdl.pointer;
+    if (reg == MDL_CFG_REG_A && (data & MDL_SOFT_RST)) {
+        mdl_reset();
+    } else if (reg == MDL_CFG_REG_A) {
+        data &= ~MDL_REBOOT;        // done at once
+        if ((data & MDL_MD_MASK) == MDL_MD_SINGLE) {
+            mdl_measure();          // one measurement, then idle
+            data = (data & ~MDL_MD_MASK) | MDL_MD_IDLE;
+        }
+        mdl.regs[reg] = data;
+    } else if (reg < sizeof(mdl.regs) && reg != MDL_WHO_AM_I && reg != MDL_STATUS && !(reg >= MDL_OUTX_L && reg <= MDL_TEMP_OUT_H)) {
+        mdl.regs[reg] = data;
     }
-    qmc.pointer = (qmc.pointer + 1) % sizeof(qmc.regs);
+    mdl.pointer = (mdl.pointer + 1) & 0x7f;
+}
+
+// --- EEPROM (0x50): the board's settings (hal/eeprom.c), 24C02-like ---
+// 256 bytes, 8-bit word address, 8-byte write pages (the address wraps inside the
+// page), sequential reads over the whole array. The write cycle time is not modelled
+// (the firmware waits 10 ms after each page). Its content survives the reboots
+// (galaxia_eeprom_image, saved by the page with the files).
+#define EEPROM_SIZE 256
+#define EEPROM_PAGE 8
+
+// The factory content of a PCB 1.0.9: protocol 1, version 3 (THINGZ_VERSION_1_0_9),
+// display 0, no compass calibration (0xFF: the firmware uses its defaults)
+// TODO replace with the dump of a real 1.0.9 board
+static uint8_t eeprom[EEPROM_SIZE] = {
+    [0] = 1, [1] = 3, [2] = 0,
+    [3 ... EEPROM_SIZE - 1] = 0xff,
+};
+
+static struct {
+    uint8_t address;
+    bool address_set;
+} eep;
+
+static void eeprom_start(void) {
+    eep.address_set = false;
+}
+
+static uint8_t eeprom_rx(void) {
+    return eeprom[eep.address++];
+}
+
+static void eeprom_tx(uint8_t data) {
+    if (!eep.address_set) {
+        eep.address = data;
+        eep.address_set = true;
+        return;
+    }
+    eeprom[eep.address] = data;
+    eep.address = (eep.address & ~(EEPROM_PAGE - 1)) | ((eep.address + 1) & (EEPROM_PAGE - 1));
+}
+
+EMSCRIPTEN_KEEPALIVE
+uint8_t *galaxia_eeprom_image(void) {
+    return eeprom;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int galaxia_eeprom_size(void) {
+    return EEPROM_SIZE;
 }
 
 static const struct i2c_device {
+
     uint8_t addr;
     void (*start_send)(void);
     uint8_t (*rx)(void);
     void (*tx)(uint8_t);
 } i2c_devices[] = {
     { 0x19, lis_start, lis_rx, lis_tx },
-    { 0x1C, qmc_start, qmc_rx, qmc_tx },
+    { 0x1E, mdl_start, mdl_rx, mdl_tx },
+    { 0x50, eeprom_start, eeprom_rx, eeprom_tx },
 };
 
 // --- command links: recorded, then run by i2c_master_cmd_begin ---
@@ -388,28 +469,61 @@ void galaxia_set_accel(int x, int y, int z) {
 // Magnetic field, magnetometer axes (milligauss)
 EMSCRIPTEN_KEEPALIVE
 void galaxia_set_magnetic(int x, int y, int z) {
-    qmc.mgauss[0] = x;
-    qmc.mgauss[1] = y;
-    qmc.mgauss[2] = z;
+    mdl.mgauss[0] = x;
+    mdl.mgauss[1] = y;
+    mdl.mgauss[2] = z;
+}
+
+// A calibration value of the EEPROM, as hal/magneto.c takes it: a float at a setting
+// of the v1 map (shifted by one in the v0 map), the default if erased (0xFFFFFFFF) or NaN
+static double eeprom_calibration(int setting, double fallback) {
+    const int addr = eeprom[0] == 1 ? setting : setting - 1;
+    float f;
+    memcpy(&f, eeprom + addr, sizeof(f));
+    uint32_t bits;
+    memcpy(&bits, &f, sizeof(bits));
+    return bits == 0xFFFFFFFF || isnan(f) ? fallback : (double)f;
 }
 
 // A compass heading as thingz.compass.heading() will report it: the field whose
-// reading, once corrected by the firmware's default QMC6310U calibration
-// (hal/magneto.c: calibrated = (raw - hardiron) x softiron, a row vector times a
-// lower triangular matrix), points to `heading` degrees, with a horizontal component
-// `h` and a vertical one `v` in calibrated units. A calibration stored by
-// compass.calibrate() replaces the default one, then the heading drifts as on a board.
+// reading, once corrected by the calibration the firmware loads (hal/magneto.c,
+// _load_calibration_data: the EEPROM's, else the default one, which is the QMC6310U's
+// on a PCB 1.0.9), points to `heading` degrees, with a horizontal component `h` and a
+// vertical one `v` in calibrated units. calibrated = (d - hardiron) x softiron (a row
+// vector times the matrix), d = the LIS2MDL reading in milligauss with y and z negated.
 EMSCRIPTEN_KEEPALIVE
 void galaxia_set_compass(double heading, double h, double v) {
-    static const double soft[3][3] = { { 1.601022, 0, 0 }, { -0.336627, 1.392834, 0 }, { 0, 0, 6.549427 } };
-    static const double hard[3] = { -161.899996, -329.866672, -84.533339 };
+    static const double def_soft[3][3] = { { 1.601022, 0, 0 }, { -0.336627, 1.392834, 0 }, { 0, 0, 6.549427 } };
+    static const double def_hard[3] = { -161.899996, -329.866672, -84.533339 };
+    enum { HARD_X = 3, HARD_Y = 7, HARD_Z = 11, SOFT_M = 15 };      // hal/eeprom.c, v1 map
+    double hard[3], s[3][3] = { { 0 } };
+    hard[0] = eeprom_calibration(HARD_X, def_hard[0]);
+    hard[1] = eeprom_calibration(HARD_Y, def_hard[1]);
+    hard[2] = eeprom_calibration(HARD_Z, def_hard[2]);
+    if (fabs(hard[0]) <= 0.0) {
+        hard[0] = def_hard[0];
+    }
+    for (int i = 1; i < 3; i++) {
+        if (fabs(hard[i]) <= 0.1) {
+            hard[i] = def_hard[i];
+        }
+    }
+    // the matrix is stored as its diagonal and [1][0], the other terms are 0
+    for (int i = 0; i < 3; i++) {
+        s[i][i] = eeprom_calibration(SOFT_M + 4 * i, def_soft[i][i]);
+    }
+    s[1][0] = eeprom_calibration(SOFT_M + 12, def_soft[1][0]);
     const double rad = heading * M_PI / 180.0;
-    const double cx = h * sin(rad), cy = h * cos(rad), cz = v;
-    // c = m x soft: cx = m0 s00 + m1 s10, cy = m1 s11, cz = m2 s22
-    const double m1 = cy / soft[1][1];
-    const double m0 = (cx - m1 * soft[1][0]) / soft[0][0];
-    const double m2 = cz / soft[2][2];
-    galaxia_set_magnetic((int)lround(m0 + hard[0]), (int)lround(m1 + hard[1]), (int)lround(m2 + hard[2]));
+    const double c[3] = { h * sin(rad), h * cos(rad), v };
+    // c = m x s, s lower triangular: c2 = m2 s22, c1 = m1 s11, c0 = m0 s00 + m1 s10
+    const double m2 = c[2] / s[2][2];
+    const double m1 = c[1] / s[1][1];
+    const double m0 = (c[0] - m1 * s[1][0]) / s[0][0];
+    if (!isfinite(m0) || !isfinite(m1) || !isfinite(m2)) {
+        return;     // a calibration the firmware cannot invert either: keep the field
+    }
+    const double d[3] = { m0 + hard[0], m1 + hard[1], m2 + hard[2] };
+    galaxia_set_magnetic((int)lround(d[0]), (int)lround(-d[1]), (int)lround(-d[2]));
 }
 
 // ===================================================================== LED, light
@@ -546,110 +660,6 @@ esp_err_t dac_continuous_write(dac_continuous_handle_t h, uint8_t *buf, size_t s
     return ESP_OK;
 }
 
-// ====================================================================== ESP-NOW
-
-#define RADIO_MAX 256
-
-static esp_now_recv_cb_t radio_recv_cb;
-static esp_now_send_cb_t radio_send_cb;
-static uint8_t radio_channel = 1;
-static bool radio_on;
-
-bool wifi_started;
-
-void esp_initialise_wifi(void) {
-}
-
-esp_err_t esp_wifi_start(void) { return ESP_OK; }
-esp_err_t esp_wifi_stop(void) { return ESP_OK; }
-esp_err_t esp_wifi_deinit(void) { return ESP_OK; }
-esp_err_t esp_wifi_set_mode(wifi_mode_t mode) { return ESP_OK; }
-esp_err_t esp_wifi_set_max_tx_power(int8_t power) { return ESP_OK; }
-esp_err_t esp_wifi_set_protocol(wifi_interface_t ifx, uint8_t bitmap) { return ESP_OK; }
-
-esp_err_t esp_wifi_get_channel(uint8_t *primary, wifi_second_chan_t *second) {
-    *primary = radio_channel;
-    if (second) {
-        *second = WIFI_SECOND_CHAN_NONE;
-    }
-    return ESP_OK;
-}
-
-esp_err_t esp_wifi_set_channel(uint8_t primary, wifi_second_chan_t second) {
-    radio_channel = primary;
-    return ESP_OK;
-}
-
-esp_err_t esp_now_init(void) {
-    radio_on = true;
-    return ESP_OK;
-}
-
-esp_err_t esp_now_deinit(void) {
-    radio_on = false;
-    return ESP_OK;
-}
-
-esp_err_t esp_now_add_peer(const esp_now_peer_info_t *peer) { return ESP_OK; }
-esp_err_t esp_now_mod_peer(const esp_now_peer_info_t *peer) { return ESP_OK; }
-esp_err_t esp_now_del_peer(const uint8_t *peer_addr) { return ESP_OK; }
-
-esp_err_t esp_now_register_recv_cb(esp_now_recv_cb_t cb) {
-    radio_recv_cb = cb;
-    return ESP_OK;
-}
-
-esp_err_t esp_now_unregister_recv_cb(void) {
-    radio_recv_cb = NULL;
-    return ESP_OK;
-}
-
-esp_err_t esp_now_register_send_cb(esp_now_send_cb_t cb) {
-    radio_send_cb = cb;
-    return ESP_OK;
-}
-
-esp_err_t esp_now_unregister_send_cb(void) {
-    radio_send_cb = NULL;
-    return ESP_OK;
-}
-
-esp_err_t esp_now_send(const uint8_t *peer_addr, const uint8_t *data, size_t len) {
-    if (!radio_on) {
-        return ESP_ERR_ESPNOW_IF;
-    }
-    uint8_t mac[6];
-    esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    galaxia_js_radio_send(radio_channel, mac, data, len);
-    if (radio_send_cb) {
-        radio_send_cb(peer_addr, ESP_NOW_SEND_SUCCESS);
-    }
-    return ESP_OK;
-}
-
-esp_err_t esp_read_mac(uint8_t *mac, esp_mac_type_t type) {
-    galaxia_js_mac(mac);
-    return ESP_OK;
-}
-
-esp_err_t esp_netif_init(void) { return ESP_OK; }
-void esp_netif_destroy(esp_netif_t *netif) { }
-esp_netif_t *esp_netif_create_default_wifi_sta(void) { return NULL; }
-esp_err_t esp_event_loop_create_default(void) { return ESP_OK; }
-
-static void radio_poll(void) {
-    uint8_t data[RADIO_MAX], mac[6];
-    int channel, len;
-    while ((len = galaxia_js_radio_next(data, sizeof(data), mac, &channel)) >= 0) {
-        if (radio_on && radio_recv_cb && channel == radio_channel) {
-            uint8_t dest[6] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
-            wifi_pkt_rx_ctrl_t rx = { .rssi = -40, .channel = channel };
-            esp_now_recv_info_t info = { .src_addr = mac, .des_addr = dest, .rx_ctrl = &rx };
-            radio_recv_cb(&info, data, len);
-        }
-    }
-}
-
 // ===================================================================== others
 
 QueueHandle_t xQueueCreateStatic(UBaseType_t len, UBaseType_t item_size, uint8_t *storage, StaticQueue_t *buf) {
@@ -704,6 +714,5 @@ MP_DEFINE_CONST_OBJ_TYPE(machine_pwm_type, MP_QSTR_PWM, MP_TYPE_FLAG_NONE, make_
 
 void peripherals_poll(void) {
     touch_poll();
-    radio_poll();
     led_poll();
 }

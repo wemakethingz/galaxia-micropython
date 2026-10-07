@@ -23,6 +23,7 @@ typedef int esp_err_t;
 #define ESP_ERR_TIMEOUT         0x107
 #define ESP_ERR_NVS_BASE        0x1100
 #define ESP_ERR_NVS_NOT_FOUND   (ESP_ERR_NVS_BASE + 0x02)
+#define ESP_ERR_NVS_NO_FREE_PAGES (ESP_ERR_NVS_BASE + 0x0d)
 #define ESP_ERROR_CHECK(x) do { (void)(x); } while (0)
 // sdkconfig of the Galaxia
 #define CONFIG_IDF_TARGET_ESP32S2 1
@@ -224,6 +225,7 @@ typedef uint32_t nvs_handle_t;
 typedef nvs_handle_t nvs_handle;
 typedef enum { NVS_READONLY, NVS_READWRITE } nvs_open_mode_t;
 esp_err_t nvs_flash_init(void);
+esp_err_t nvs_flash_erase(void);
 esp_err_t nvs_open(const char *name, nvs_open_mode_t mode, nvs_handle_t *out);
 esp_err_t nvs_get_u8(nvs_handle_t h, const char *key, uint8_t *v);
 esp_err_t nvs_get_u32(nvs_handle_t h, const char *key, uint32_t *v);
@@ -235,6 +237,7 @@ esp_err_t nvs_set_u32(nvs_handle_t h, const char *key, uint32_t v);
 esp_err_t nvs_set_i32(nvs_handle_t h, const char *key, int32_t v);
 esp_err_t nvs_set_str(nvs_handle_t h, const char *key, const char *v);
 esp_err_t nvs_set_blob(nvs_handle_t h, const char *key, const void *v, size_t len);
+esp_err_t nvs_erase_key(nvs_handle_t h, const char *key);
 esp_err_t nvs_commit(nvs_handle_t h);
 void nvs_close(nvs_handle_t h);
 
@@ -267,5 +270,6 @@ typedef struct {
 typedef struct galaxia_dac_continuous *dac_continuous_handle_t;
 
 #include "idf_periph.h"
+#include "idf_net.h"
 
 #endif

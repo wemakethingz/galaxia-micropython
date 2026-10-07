@@ -134,63 +134,8 @@ esp_err_t dac_continuous_disable(dac_continuous_handle_t h);
 esp_err_t dac_continuous_write_cyclically(dac_continuous_handle_t h, uint8_t *buf, size_t size, size_t *loaded);
 esp_err_t dac_continuous_write(dac_continuous_handle_t h, uint8_t *buf, size_t size, size_t *loaded, int timeout_ms);
 
-// ---- Wi-Fi, ESP-NOW, MAC ----
-typedef enum { ESP_IF_WIFI_STA = 0, ESP_IF_WIFI_AP } wifi_interface_t;
-#define WIFI_IF_STA ESP_IF_WIFI_STA
-#define WIFI_IF_AP ESP_IF_WIFI_AP
-typedef int esp_interface_t;
-typedef enum { WIFI_MODE_NULL, WIFI_MODE_STA, WIFI_MODE_AP, WIFI_MODE_APSTA } wifi_mode_t;
-typedef enum { WIFI_SECOND_CHAN_NONE, WIFI_SECOND_CHAN_ABOVE, WIFI_SECOND_CHAN_BELOW } wifi_second_chan_t;
-#define WIFI_PROTOCOL_11B 1
-#define WIFI_PROTOCOL_11G 2
-#define WIFI_PROTOCOL_11N 4
-#define WIFI_PROTOCOL_LR 8
-#define ESP_ERR_ESPNOW_BASE 0x3066
-#define ESP_ERR_ESPNOW_IF (ESP_ERR_ESPNOW_BASE + 8)
-#define ESP_NOW_ETH_ALEN 6
-#define ESP_NOW_KEY_LEN 16
-typedef enum { ESP_NOW_SEND_SUCCESS = 0, ESP_NOW_SEND_FAIL } esp_now_send_status_t;
-typedef struct { int rssi; int channel; } wifi_pkt_rx_ctrl_t;
-typedef struct {
-    uint8_t *src_addr;
-    uint8_t *des_addr;
-    wifi_pkt_rx_ctrl_t *rx_ctrl;
-} esp_now_recv_info_t;
-typedef struct {
-    uint8_t peer_addr[ESP_NOW_ETH_ALEN];
-    uint8_t lmk[ESP_NOW_KEY_LEN];
-    uint8_t channel;
-    wifi_interface_t ifidx;
-    bool encrypt;
-    void *priv;
-} esp_now_peer_info_t;
-typedef void (*esp_now_recv_cb_t)(const esp_now_recv_info_t *info, const uint8_t *data, int len);
-typedef void (*esp_now_send_cb_t)(const uint8_t *mac_addr, esp_now_send_status_t status);
-esp_err_t esp_now_init(void);
-esp_err_t esp_now_deinit(void);
-esp_err_t esp_now_add_peer(const esp_now_peer_info_t *peer);
-esp_err_t esp_now_mod_peer(const esp_now_peer_info_t *peer);
-esp_err_t esp_now_del_peer(const uint8_t *peer_addr);
-esp_err_t esp_now_register_recv_cb(esp_now_recv_cb_t cb);
-esp_err_t esp_now_unregister_recv_cb(void);
-esp_err_t esp_now_register_send_cb(esp_now_send_cb_t cb);
-esp_err_t esp_now_unregister_send_cb(void);
-esp_err_t esp_now_send(const uint8_t *peer_addr, const uint8_t *data, size_t len);
-esp_err_t esp_wifi_start(void);
-esp_err_t esp_wifi_stop(void);
-esp_err_t esp_wifi_deinit(void);
-esp_err_t esp_wifi_set_mode(wifi_mode_t mode);
-esp_err_t esp_wifi_set_max_tx_power(int8_t power);
-esp_err_t esp_wifi_get_channel(uint8_t *primary, wifi_second_chan_t *second);
-esp_err_t esp_wifi_set_channel(uint8_t primary, wifi_second_chan_t second);
-esp_err_t esp_wifi_set_protocol(wifi_interface_t ifx, uint8_t bitmap);
-typedef enum { ESP_MAC_WIFI_STA, ESP_MAC_WIFI_SOFTAP, ESP_MAC_BT, ESP_MAC_ETH } esp_mac_type_t;
-esp_err_t esp_read_mac(uint8_t *mac, esp_mac_type_t type);
-typedef struct galaxia_netif esp_netif_t;
-esp_err_t esp_netif_init(void);
-void esp_netif_destroy(esp_netif_t *netif);
-esp_netif_t *esp_netif_create_default_wifi_sta(void);
-esp_err_t esp_event_loop_create_default(void);
+// Wi-Fi, ESP-NOW, netif, events, lwIP: idf_net.h
+
 esp_err_t esp_spiffs_format(const char *partition_label);
 
 #endif

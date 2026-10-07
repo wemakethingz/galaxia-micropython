@@ -23,7 +23,8 @@
 #define MICROPY_ENABLE_DOC_STRING   (0)
 #define MICROPY_WARNINGS            (1)
 #define MICROPY_FLOAT_IMPL          (MICROPY_FLOAT_IMPL_FLOAT)
-#define MICROPY_USE_INTERNAL_ERRNO  (1)
+// errno of the board's C library (newlib): ETIMEDOUT is 116 (newlib/errno.h)
+#define MICROPY_USE_INTERNAL_ERRNO  (0)
 #define MICROPY_USE_INTERNAL_PRINTF (0)
 #define MICROPY_EPOCH_IS_1970       (1)
 #define MICROPY_PY_RANDOM_SEED_INIT_FUNC (mp_js_random_u32())
@@ -39,8 +40,25 @@
 #define MICROPY_PY_SYS_PLATFORM     "galaxia"
 #define MICROPY_PY_SYS_STDFILES     (1)
 #define MICROPY_PY_OS_DUPTERM       (0)
-#define MICROPY_PY_THREAD           (0)
-#define MICROPY_PY_ASYNCIO          (0)
+// _thread as on the board (esp32 port: GIL, released every 32 jumps), on fibers
+// (mpthreadport.c)
+#define MICROPY_PY_THREAD           (1)
+#define MICROPY_PY_THREAD_GIL       (1)
+#define MICROPY_PY_THREAD_GIL_VM_DIVISOR (32)
+#define MICROPY_STACK_CHECK_MARGIN  (1024)
+#define MICROPY_PY_ASYNCIO          (1)
+
+// Network: the esp32 port's network (WLAN) and socket modules, over the simulated
+// Wi-Fi chip and lwIP of net.c
+#define MICROPY_PY_NETWORK          (1)
+#define MICROPY_PY_NETWORK_HOSTNAME_DEFAULT "GALAXIA"
+#define MICROPY_PY_NETWORK_INCLUDEFILE "ports/esp32/modnetwork.h"
+#define MICROPY_PY_NETWORK_MODULE_GLOBALS_INCLUDEFILE "ports/esp32/modnetwork_globals.h"
+#define MICROPY_PY_NETWORK_WLAN     (1)
+#define MICROPY_HW_ENABLE_MDNS_QUERIES   (1)
+#define MICROPY_HW_ENABLE_MDNS_RESPONDER (1)
+// As on the board (MICROPY_PY_WEBREPL): socket callbacks run from the poll hook
+#define MICROPY_PY_SOCKET_EVENTS    (1)
 
 // Every few bytecodes: run the due esp_timer callbacks (screen refresh, button
 // debounce), and now and then give the Worker's event loop a turn so that
@@ -59,7 +77,9 @@
     do { \
         extern void galaxia_poll(void); \
         extern void mp_handle_pending(bool); \
+        extern void socket_events_handler(void); \
         galaxia_poll(); \
+        socket_events_handler(); \
         mp_handle_pending(true); \
     } while (0);
 

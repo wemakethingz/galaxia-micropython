@@ -21,6 +21,8 @@ ESP32_DIR = $(MPY_DIR)/ports/esp32
 include $(MPY_DIR)/py/mkenv.mk
 
 MICROPY_VFS_FAT = 1
+# The firmware's frozen modules that run here (manifest.py)
+FROZEN_MANIFEST ?= $(PORT_DIR)/manifest.py
 
 
 QSTR_DEFS = qstrdefsport.h
@@ -36,6 +38,7 @@ NODE ?= node
 # not the esp32 port's. Then the ESP-IDF shim headers, then the esp32 port for
 # "common-thingz/..." and "lib/tft/..." includes.
 INC += -I.
+INC += -Inewlib
 INC += -Iidf
 INC += -I$(TOP)
 INC += -I$(BUILD)
@@ -73,6 +76,7 @@ JSFLAGS += -s ALLOW_MEMORY_GROWTH -s STACK_SIZE=262144
 JSFLAGS += $(EXTRA_LDFLAGS)
 
 SRC_SHARED = $(addprefix shared/,\
+	netutils/netutils.c \
 	runtime/interrupt_char.c \
 	runtime/stdout_helpers.c \
 	runtime/sys_stdio_mphal.c \
@@ -89,6 +93,8 @@ SRC_C += \
 	peripherals.c \
 	thingz_stubs.c \
 	galaxia_flash.c \
+	net.c \
+	mpthreadport.c \
 
 # Thingz sources, as they are in the firmware
 SRC_THINGZ = $(addprefix ports/esp32/,\
@@ -100,7 +106,12 @@ SRC_THINGZ = $(addprefix ports/esp32/,\
 	common-thingz/thingz_led/thingz_led.c \
 	common-thingz/thingz_sound/thingz_sound.c \
 	common-thingz/thingz_radio/thingz_radio.c \
+	network_common.c \
+	network_wlan.c \
+	modsocket.c \
 	common-thingz/thingz_log/thingz_log.c \
+	common-thingz/thingz_memory/thingz_memory.c \
+	hal/eeprom.c \
 	hal/accel_lis2dh12.c \
 	hal/magneto.c \
 	lib/lis2dh12/lis2dh12.c \

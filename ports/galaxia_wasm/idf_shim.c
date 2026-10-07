@@ -12,6 +12,7 @@
 #include "idf_shim.h"
 #include "st7735.h"
 #include "peripherals.h"
+#include "net.h"
 #include "mpconfigboard.h"
 
 extern int galaxia_js_gpio_get(int pin);
@@ -457,6 +458,14 @@ esp_err_t nvs_flash_init(void) {
     return ESP_OK;
 }
 
+esp_err_t nvs_flash_erase(void) {
+    for (int i = 0; i < NVS_MAX; i++) {
+        free(nvs[i].str);
+    }
+    memset(nvs, 0, sizeof(nvs));
+    return ESP_OK;
+}
+
 esp_err_t nvs_open(const char *name, nvs_open_mode_t mode, nvs_handle_t *out) {
     *out = 1;
     return ESP_OK;
@@ -538,6 +547,16 @@ esp_err_t nvs_set_str(nvs_handle_t h, const char *key, const char *v) {
     return nvs_set_blob(h, key, v, strlen(v) + 1);
 }
 
+esp_err_t nvs_erase_key(nvs_handle_t h, const char *key) {
+    int i = nvs_find(key, false);
+    if (i < 0) {
+        return ESP_ERR_NVS_NOT_FOUND;
+    }
+    free(nvs[i].str);
+    memset(&nvs[i], 0, sizeof(nvs[i]));
+    return ESP_OK;
+}
+
 esp_err_t nvs_commit(nvs_handle_t h) {
     return ESP_OK;
 }
@@ -588,6 +607,7 @@ void idf_shim_poll(void) {
     busy = true;
     deliver_gpio_edges();
     peripherals_poll();
+    net_poll();
     run_timers();
     int64_t now = esp_timer_get_time();
     if (st7735_frame() != sent_frame && now - sent_at >= SCREEN_MIN_PERIOD_MS * 1000) {
