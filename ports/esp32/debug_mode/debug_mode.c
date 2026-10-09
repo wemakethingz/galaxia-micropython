@@ -401,7 +401,8 @@ void debug_mode_start(void){
     // mp_printf(MP_PYTHON_PRINTER, "START\n");
     if(init == true)return;
     // mp_printf(MP_PYTHON_PRINTER, "START 2\n");
-    header_text = malloc(sizeof(char)*256);
+    // Zeroed: the header text scroll takes its strlen() below
+    header_text = calloc(256, sizeof(char));
 
     gpio_config_t io_conf;
 
