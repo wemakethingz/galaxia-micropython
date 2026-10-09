@@ -29,6 +29,7 @@
 
 extern void galaxia_js_sleep(int ms);
 extern void galaxia_note_yield(void);
+extern bool galaxia_yield_if_due(void);
 
 #define MP_THREAD_MIN_STACK_SIZE        (4 * 1024)
 #define MP_THREAD_DEFAULT_STACK_SIZE    (MP_THREAD_MIN_STACK_SIZE + MICROPY_STACK_CHECK_MARGIN)
@@ -136,6 +137,7 @@ static galaxia_thread_t *next_runnable(void) {
 // Gives the CPU to another thread until the current one can run again
 static void schedule(void) {
     for (;;) {
+        galaxia_yield_if_due();
         galaxia_thread_t *t = next_runnable();
         if (t && t != current) {
             switch_to(t);
@@ -160,8 +162,9 @@ static void schedule(void) {
         galaxia_js_sleep(ms < 0 ? 0 : ms > 50 ? 50 : ms);
         galaxia_note_yield();
         if (now_us() < first) {
+            // (not the drivers' tasks: what they wait for wakes them, galaxia_task_wake)
             for (galaxia_thread_t *s = threads; s; s = s->next) {
-                if (s->status == T_SLEEPING) {
+                if (s->status == T_SLEEPING && !s->task) {
                     s->status = T_RUNNABLE;
                 }
             }
@@ -236,8 +239,25 @@ mp_uint_t mp_thread_create(void *(*entry)(void *), void *arg, size_t *stack_size
 // ---- FreeRTOS tasks of the drivers: fibers in the same scheduler, outside Python
 // (they only schedule callbacks, with the main thread's state) ----
 
+bool galaxia_in_main_thread(void) {
+    return current == &main_thread;
+}
+
 bool galaxia_in_task(void) {
     return current->task != NULL;
+}
+
+void *galaxia_task_self(void) {
+    return current;
+}
+
+// What a blocked task waited for came (a queue item): it runs again at the next
+// switch
+void galaxia_task_wake(void *task) {
+    galaxia_thread_t *t = task;
+    if (t->status == T_SLEEPING) {
+        t->status = T_RUNNABLE;
+    }
 }
 
 BaseType_t xTaskCreatePinnedToCore(TaskFunction_t fn, const char *name, uint32_t stack_depth, void *arg,
@@ -290,9 +310,10 @@ void mp_thread_gc_others(void) {
 }
 
 void mp_thread_deinit(void) {
-    // Soft reset: the other threads stop where they are
+    // Soft reset: the other Python threads stop where they are (the drivers' tasks
+    // go on, as on the board)
     for (galaxia_thread_t *t = threads; t; t = t->next) {
-        if (t != current) {
+        if (t != current && !t->task) {
             t->status = T_FINISHED;
             t->ready = false;
         }

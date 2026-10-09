@@ -5,8 +5,9 @@
 //                                           across reboots (FAT image, SPIFFS log, settings
 //                                           EEPROM, MAC address)
 //   {type: "in", data: Uint8Array}          bytes typed on the REPL
-//   {type: "gpio", pin, level}              buttons A (45) / B (43): 0 = pressed
-//   {type: "touch", pad, touched}           touch pads N 8, S 4, E 5, W 9
+//   {type: "gpio", pin, level, t}           buttons A (45) / B (43) / SYSTEME (0): 0 =
+//                                           pressed; t: when (the page's performance.now())
+//   {type: "touch", pad, touched, t}        touch pads N 8, S 4, E 5, W 9
 //   {type: "accel", x, y, z}                acceleration, milli-g, board axes
 //   {type: "compass", heading}             the heading thingz.compass.heading() reports
 //   {type: "magnetic", x, y, z}             raw magnetic field, milligauss, magnetometer axes
@@ -15,6 +16,15 @@
 //   {type: "aps", aps, hosts}               the page's Wi-Fi access points:
 //                                           [{ssid, password, authmode, channel}], and
 //                                           the names their router's DNS knows
+//   {type: "upload", files, main}           a program: files [{path, data: Uint8Array}]
+//                                           written straight into the flash, main the
+//                                           file to execute; the program running stops
+//                                           and the board soft-resets to run it
+//   {type: "key", id, op, path, data}       the USB key as the computer sees it
+//                                           (usb_key.c), op: list, read, write, mkdir,
+//                                           remove, space; answered by {type: "key",
+//                                           id, ...result} or {type: "key", id, error}
+//                                           (-FRESULT, or "off")
 //   {type: "get-state"}                     answered by {type: "state", state}
 // Messages to the page:
 //   {type: "ready"}                         booted (main.py or the REPL comes next)
@@ -22,6 +32,7 @@
 //   {type: "screen", data: RGBA, width, height}
 //   {type: "led", r, g, b}
 //   {type: "sound", sound: {loop, rate, samples} | null}
+//   {type: "uploaded", ok}                  the uploaded files are in the flash
 //   {type: "state", state}
 //   {type: "crash", reason, state}          the firmware stopped (the board reboots)
 //   {type: "reset", state, sleepMs}         the board resets (machine.reset, watchdog), or
@@ -43,6 +54,8 @@ const galaxia = {
     gpioChanged: [],
     touch: {},
     touchChanged: [],
+    inputs: [],                 // buttons and pads, applied in time (library.js)
+    inputApplied: null,
     light: 128,
     temperature: 30,
     mac: new Uint8Array(6),
@@ -66,6 +79,8 @@ const galaxia = {
     aps: [],                    // the page's access points (the classroom's Wi-Fi)
     hosts: {},                  // their router's DNS: name -> [a, b, c, d]
     reset: (reason, wake, sleepMs) => reset(reason, wake, sleepMs),
+    upload: null,               // a program the page sent (library.js)
+    uploaded: (ok) => postMessage({ type: "uploaded", ok }),
     boot: null,                 // what the previous run left (bootInfo)
 };
 
@@ -143,6 +158,62 @@ function reset(reason, wake, sleepMs) {
     close();
 }
 
+// The computer's operations on the USB key: the FAT partition the firmware has
+// mounted, read and written block by block (usb_key.c)
+function usbKey(m) {
+    if (!Module || ended) {
+        return { error: "off" };
+    }
+    const M = Module;
+    const call = (name, types, args) => M.ccall(name, "number", types, args);
+    const withBuffer = (size, fn) => {
+        const p = M._malloc(Math.max(1, size));
+        try {
+            return fn(p);
+        } finally {
+            M._free(p);
+        }
+    };
+    switch (m.op) {
+        case "list":
+            return withBuffer(1 << 16, (p) => {
+                const n = call("galaxia_key_list", ["string", "number", "number"], [m.path, p, 1 << 16]);
+                if (n < 0) return { error: n };
+                const entries = M.UTF8ToString(p, n).split("\n").filter(Boolean).map((line) => {
+                    const [kind, size, ...name] = line.split("\t");
+                    return { name: name.join("\t"), dir: kind === "d", size: Number(size) };
+                });
+                return { entries };
+            });
+        case "read": {
+            const size = call("galaxia_key_size", ["string"], [m.path]);
+            if (size < 0) return { error: size };
+            return withBuffer(size, (p) => {
+                const n = call("galaxia_key_read", ["string", "number", "number"], [m.path, p, size]);
+                return n < 0 ? { error: n } : { data: M.HEAPU8.slice(p, p + n) };
+            });
+        }
+        case "write":
+            return withBuffer(m.data.length, (p) => {
+                M.HEAPU8.set(m.data, p);
+                const n = call("galaxia_key_write", ["string", "number", "number"], [m.path, p, m.data.length]);
+                return n < 0 ? { error: n } : {};
+            });
+        case "mkdir":
+        case "remove": {
+            const r = call(m.op === "mkdir" ? "galaxia_key_mkdir" : "galaxia_key_remove", ["string"], [m.path]);
+            return r < 0 ? { error: r } : {};
+        }
+        case "space":
+            return withBuffer(16, (p) => {
+                const r = call("galaxia_key_space", ["number"], [p]);
+                return r < 0 ? { error: r } : { free: M.HEAPF64[p >> 3], total: M.HEAPF64[(p >> 3) + 1] };
+            });
+        default:
+            return { error: "op" };
+    }
+}
+
 // An input wakes the board early from a wait (REPL prompt, sleep)
 function wake() {
     const w = galaxia.wake;
@@ -208,12 +279,10 @@ onmessage = (e) => {
             for (const b of m.data) galaxia.stdin.push(b);
             break;
         case "gpio":
-            galaxia.gpio[m.pin] = m.level;
-            galaxia.gpioChanged.push(m.pin);
+            galaxia.inputs.push({ kind: "gpio", id: m.pin, value: m.level, t: m.t ?? performance.now() });
             break;
         case "touch":
-            galaxia.touch[m.pad] = m.touched;
-            galaxia.touchChanged.push(m.pad);
+            galaxia.inputs.push({ kind: "touch", id: m.pad, value: m.touched, t: m.t ?? performance.now() });
             break;
         case "accel":
             galaxia.accel = [m.x, m.y, m.z];
@@ -238,6 +307,14 @@ onmessage = (e) => {
         case "light":
             galaxia.light = m.value;
             return;
+        case "upload":
+            galaxia.upload = { files: m.files, main: m.main, requested: true };
+            break;
+        case "key": {
+            const r = usbKey(m);
+            postMessage({ type: "key", id: m.id, ...r }, r.data ? [r.data.buffer] : []);
+            break;      // a write may have restarted the program: wake the board
+        }
         case "get-state":
             if (Module) {
                 const state = boardState();

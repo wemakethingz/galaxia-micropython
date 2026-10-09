@@ -20,5 +20,8 @@ void galaxia_thread_sleep_ms(int ms);
 
 // FreeRTOS tasks of the ESP-IDF drivers (UART events): fibers too, outside Python
 bool galaxia_in_task(void);
+bool galaxia_in_main_thread(void);
+void *galaxia_task_self(void);
+void galaxia_task_wake(void *task);
 
 #endif

@@ -12,8 +12,10 @@
 #include "extmod/vfs.h"
 #include "lib/oofatfs/ff.h"
 
-#define BLOCK_SIZE 512
-#define BLOCK_COUNT 4032        // ~2 MB, as MICROPY_HW_FLASH_STORAGE_BYTES on the board
+// As the board's "vfs" partition (esp32.Partition, CONFIG_WL_SECTOR_SIZE): 4096-byte
+// blocks, MICROPY_HW_FLASH_STORAGE_BYTES (0x1F8000) in all
+#define BLOCK_SIZE 4096
+#define BLOCK_COUNT (0x1F8000 / BLOCK_SIZE)
 
 static uint8_t *storage;
 
@@ -28,6 +30,10 @@ uint8_t *galaxia_flash_image(void) {
 EMSCRIPTEN_KEEPALIVE
 size_t galaxia_flash_size(void) {
     return (size_t)BLOCK_COUNT * BLOCK_SIZE;
+}
+
+size_t galaxia_flash_block_size(void) {
+    return BLOCK_SIZE;
 }
 
 typedef struct {

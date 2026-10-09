@@ -53,6 +53,7 @@ textarea { width: 100%; min-height: 220px; font: 13px/1.4 ui-monospace, Menlo, C
 .field { display: grid; grid-template-columns: 120px 1fr; gap: 10px; align-items: center; margin: 6px 0; }
 .mqtt-log { background: var(--console-bg); color: var(--console-text); font: 12.5px/1.4 ui-monospace, Menlo, Consolas, monospace; height: 150px; overflow: auto; padding: 6px 8px; border-radius: 7px; margin-top: 8px; white-space: pre-wrap; word-break: break-all; }
 .field input, .field select { font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); min-width: 0; }
+.sysbtn { position: absolute; right: -6px; top: -6px; width: 34px; height: 34px; font-size: 10px; }
 @media (max-width: 520px) { .sensor { grid-template-columns: 90px 1fr 56px; } .hwbtn { width: 52px; height: 52px; } }
 </style>
 </head>
@@ -68,6 +69,7 @@ textarea { width: 100%; min-height: 220px; font: 13px/1.4 ui-monospace, Menlo, C
         <div class="screen-wrap">
           <canvas id="screen" width="160" height="128"></canvas>
           <div class="led" id="led" title="LED RVB"></div>
+          <button class="hwbtn sysbtn" data-pin="0" title="Bouton SYSTEME : menu système (appui long : le quitter)">SYS</button>
         </div>
         <button class="hwbtn" data-pin="45" title="Bouton A (touche A du clavier)">A</button>
         <div class="touch" title="Touches tactiles">
@@ -332,8 +334,9 @@ function playSound(s) {
 function setButton(btn, pressed) {
   if (btn.classList.contains("pressed") === pressed) return;
   btn.classList.toggle("pressed", pressed);
-  if (btn.dataset.pin) worker.postMessage({ type: "gpio", pin: Number(btn.dataset.pin), level: pressed ? 0 : 1 });
-  else worker.postMessage({ type: "touch", pad: Number(btn.dataset.pad), touched: pressed ? 1 : 0 });
+  const t = performance.now();
+  if (btn.dataset.pin) worker.postMessage({ type: "gpio", pin: Number(btn.dataset.pin), level: pressed ? 0 : 1, t });
+  else worker.postMessage({ type: "touch", pad: Number(btn.dataset.pad), touched: pressed ? 1 : 0, t });
 }
 for (const b of document.querySelectorAll(".hwbtn, .tpad")) {
   b.addEventListener("pointerdown", (e) => { b.setPointerCapture(e.pointerId); setButton(b, true); });

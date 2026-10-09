@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>      // as the esp32 port's: esp_system.h -> esp_err.h includes it
 
 #include "mpconfigboard.h"
 
@@ -17,6 +18,10 @@
 #define MICROPY_ENABLE_PYSTACK      (0)
 #define MICROPY_STACK_CHECK         (1)
 #define MICROPY_KBD_EXCEPTION       (1)
+// As on the esp32 port: microcontroller.set_file_to_execute() stops the program with a
+// ReloadInterrupt and the board runs the new file
+#define MICROPY_RELOAD_EXCEPTION    (1)
+#define MICROPY_REPL_INFO           (1)
 #define MICROPY_HELPER_REPL         (1)
 #define MICROPY_REPL_AUTO_INDENT    (1)
 #define MICROPY_LONGINT_IMPL        (MICROPY_LONGINT_IMPL_MPZ)

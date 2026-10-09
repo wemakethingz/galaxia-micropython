@@ -62,8 +62,13 @@ TickType_t xTaskGetTickCount(void) {
 }
 
 void vTaskDelay(TickType_t ticks) {
-    // Only used by drivers during init (screen reset): a real pause, nothing else runs
-    galaxia_js_sleep(ticks * portTICK_PERIOD_MS);
+    // The caller waits, the other tasks and threads run meanwhile (the debug menu's
+    // task, which debug_mode_stop() waits for); alone, a real pause. A sleep can end
+    // early (an input wakes the sleepers): wait again until the deadline.
+    const int64_t until = esp_timer_get_time() + (int64_t)ticks * portTICK_PERIOD_MS * 1000;
+    for (int64_t now = esp_timer_get_time(); now < until; now = esp_timer_get_time()) {
+        galaxia_thread_sleep_ms((int)((until - now + 999) / 1000));
+    }
 }
 
 // ---- semaphores and queues: one thread, so a take either succeeds now or fails ----
@@ -113,6 +118,7 @@ void vSemaphoreDelete(SemaphoreHandle_t s) {
 struct galaxia_queue {
     UBaseType_t len, item_size, head, count;
     uint8_t *items;
+    void *waiter;       // the task blocked on the queue, woken by a send
 };
 
 QueueHandle_t xQueueCreate(UBaseType_t len, UBaseType_t item_size) {
@@ -130,16 +136,24 @@ BaseType_t xQueueSend(QueueHandle_t q, const void *item, TickType_t ticks) {
     }
     memcpy(q->items + ((q->head + q->count) % q->len) * q->item_size, item, q->item_size);
     q->count++;
+    if (q->waiter) {
+        galaxia_task_wake(q->waiter);
+    }
     return pdTRUE;
 }
 
 BaseType_t xQueueReceive(QueueHandle_t q, void *item, TickType_t ticks) {
-    // A FreeRTOS task (UART events) waits for an item; elsewhere the senders have
-    // already run (one thread), so the queue holds what will ever come
+    // A FreeRTOS task (UART events, the system menu) waits for an item: blocked
+    // until a send wakes it or the timeout, as in FreeRTOS (it does not run
+    // meanwhile). Elsewhere the senders have already run (one thread), so the queue
+    // holds what will ever come.
     if (q && q->count == 0 && ticks && galaxia_in_task()) {
         const int64_t until = ticks == portMAX_DELAY ? INT64_MAX : esp_timer_get_time() + (int64_t)ticks * portTICK_PERIOD_MS * 1000;
-        while (q->count == 0 && esp_timer_get_time() < until) {
-            galaxia_thread_sleep_ms(10);
+        for (int64_t now = esp_timer_get_time(); q->count == 0 && now < until; now = esp_timer_get_time()) {
+            int64_t left = (until - now + 999) / 1000;
+            q->waiter = galaxia_task_self();
+            galaxia_thread_sleep_ms(left > INT32_MAX ? INT32_MAX : (int)left);
+            q->waiter = NULL;
         }
     }
     if (!q || q->count == 0) {
@@ -237,6 +251,14 @@ int idf_shim_next_timer_ms(void) {
 }
 
 static void run_timers(void) {
+    // On the board the callbacks run in the esp_timer task, never on a Python
+    // thread's stack. Here they run from the main thread's polls only: run from a
+    // secondary thread's sleep (time.sleep_ms in a _thread), the screen's raw
+    // refresh, which opens and reads image files, ended up calling garbage when a
+    // driver task (the system menu's) ran in the middle of it.
+    if (!galaxia_in_main_thread()) {
+        return;
+    }
     int64_t now = esp_timer_get_time();
     for (struct galaxia_timer *t = timers; t; t = t->next) {
         if (!t->active || t->due_us > now) {

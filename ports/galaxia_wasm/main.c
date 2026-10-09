@@ -90,6 +90,71 @@ static void mount_root(void) {
         "del vfs, _galaxia\n");
 }
 
+// A program uploaded by the page (library.js): its files go straight into the
+// flash, as the programming page writes them through the REPL, then it becomes the
+// file to execute (microcontroller.set_file_to_execute)
+extern int galaxia_js_upload_count(void);
+extern void galaxia_js_upload_path(int i, char *buf, int len);
+extern int galaxia_js_upload_size(int i);
+extern void galaxia_js_upload_data(int i, void *buf);
+extern void galaxia_js_upload_done(int ok);
+
+static void upload_mkdirs(const char *path) {
+    // Parent directories, as the page's "os.mkdir" lines (existing ones are fine)
+    char dir[MICROPY_ALLOC_PATH_MAX];
+    for (const char *p = strchr(path + 1, '/'); p; p = strchr(p + 1, '/')) {
+        size_t n = p - path;
+        if (n >= sizeof(dir)) {
+            break;
+        }
+        memcpy(dir, path, n);
+        dir[n] = 0;
+        nlr_buf_t nlr;
+        if (nlr_push(&nlr) == 0) {
+            mp_vfs_mkdir(mp_obj_new_str(dir, n));
+            nlr_pop();
+        }
+    }
+}
+
+static void install_upload(void) {
+    int count = galaxia_js_upload_count();
+    if (count == 0) {
+        return;
+    }
+    int ok = 0;
+    nlr_buf_t nlr;
+    if (nlr_push(&nlr) == 0) {
+        char path[MICROPY_ALLOC_PATH_MAX];
+        for (int i = 0; i < count; i++) {
+            galaxia_js_upload_path(i, path, sizeof(path));
+            upload_mkdirs(path);
+            size_t size = galaxia_js_upload_size(i);
+            byte *data = m_new(byte, size ? size : 1);
+            galaxia_js_upload_data(i, data);
+            mp_obj_t args[2] = { mp_obj_new_str(path, strlen(path)), MP_OBJ_NEW_QSTR(MP_QSTR_wb) };
+            mp_obj_t f = mp_builtin_open(2, args, (mp_map_t *)&mp_const_empty_map);
+            int err;
+            mp_uint_t written = mp_stream_rw(f, data, size, &err, MP_STREAM_RW_WRITE);
+            mp_stream_close(f);
+            m_del(byte, data, size ? size : 1);
+            if (written != size) {
+                mp_raise_OSError(err);
+            }
+        }
+        galaxia_js_upload_path(-1, path, sizeof(path));
+        if (path[0]) {
+            thingz_set_python_file_to_exec(path);
+        }
+        nlr_pop();
+        ok = 1;
+    } else {
+        mp_printf(&mp_plat_print, "Téléversement : ");
+        mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+    }
+    galaxia_js_upload_done(ok);
+}
+
 EMSCRIPTEN_KEEPALIVE
 void galaxia_main(void) {
     mp_thread_init();
@@ -120,12 +185,16 @@ soft_reset:
     mp_init();
     machine_pins_init();
     mount_root();
+    install_upload();
     mp_obj_list_append(mp_sys_path, MP_OBJ_NEW_QSTR(MP_QSTR__slash_lib));
     readline_init0();
 
     thingz_screen_switch_mode(COMMON_THINGZ_SCREEN_MODE_REPL);
     galaxia_screen_ready();
     thingz_init();
+    #if MICROPY_THINGZ_DEBUG_MODE
+    debug_mode_start();     // the system menu (SYSTEME button, GPIO0)
+    #endif
 
     copy_log_to_usb_key();
     EM_ASM({ Module.galaxia.ready && Module.galaxia.ready(); });    // boot done: main.py or the REPL next
@@ -173,6 +242,9 @@ soft_reset_exit:
     machine_deinit();
     socket_events_deinit();
     thingz_deinit();
+    #if MICROPY_THINGZ_DEBUG_MODE
+    debug_mode_stop();
+    #endif
     mp_hal_stdout_tx_str("Redémarrage du programme\r\n");
     mp_deinit();
     fflush(stdout);

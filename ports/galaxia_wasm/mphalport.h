@@ -1,4 +1,8 @@
 // HAL of the galaxia_sim WebAssembly port
+// (Same guard as ports/esp32/mphalport.h: a firmware file that includes that one by
+// its quoted name, as modmicrocontroller.c, gets it alone.)
+#ifndef INCLUDED_MPHALPORT_H
+#define INCLUDED_MPHALPORT_H
 
 #include "py/obj.h"
 #include "shared/runtime/interrupt_char.h"
@@ -16,6 +20,11 @@ uint64_t mp_hal_time_ns(void);
 uintptr_t mp_hal_stdio_poll(uintptr_t poll_flags);
 
 int mp_hal_get_interrupt_char(void);
+
+// Input the firmware itself queues (microcontroller.set_file_to_execute: Ctrl-C,
+// Ctrl-D), read before the page's
+#include "py/ringbuf.h"
+extern ringbuf_t stdin_ringbuf;
 
 // Runs the due timers and, at most every few ms, lets the Worker's event loop run.
 void galaxia_poll(void);
@@ -89,3 +98,5 @@ void check_esp_err_(esp_err_t code);
             break; \
         } \
     }
+
+#endif // INCLUDED_MPHALPORT_H

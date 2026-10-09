@@ -60,7 +60,7 @@ CFLAGS += $(INC)
 THINGZ_CFLAGS = -Wno-error -w -Wno-error=incompatible-function-pointer-types -include thingz_compat.h
 
 JSFLAGS += -s EXPORTED_FUNCTIONS="_galaxia_main,_malloc,_free"
-JSFLAGS += -s EXPORTED_RUNTIME_METHODS="ccall,cwrap,FS,HEAPU8,HEAPU16"
+JSFLAGS += -s EXPORTED_RUNTIME_METHODS="ccall,cwrap,FS,HEAPU8,HEAPU16,HEAPF64,UTF8ToString"
 JSFLAGS += --js-library library.js
 JSFLAGS += -sSUPPORT_LONGJMP=$(LONGJMP)
 # Asyncify: the GC scans the wasm registers, sleeps and the REPL's wait for a key go
@@ -97,6 +97,9 @@ SRC_C += \
 	net.c \
 	mpthreadport.c \
 	machine_hw.c \
+	microcontroller.c \
+	debug_mode_reboot.c \
+	usb_key.c \
 
 # Thingz sources, as they are in the firmware
 SRC_THINGZ = $(addprefix ports/esp32/,\
@@ -144,6 +147,17 @@ SRC_THINGZ = $(addprefix ports/esp32/,\
 	lib/tft/ili9340.c \
 	lib/tft/fontx.c \
 	lib/tft/font.c \
+	debug_mode/buttons/buttons.c \
+	debug_mode/config/config.c \
+	debug_mode/home/home.c \
+	debug_mode/last_error/last_error.c \
+	debug_mode/led/led.c \
+	debug_mode/sensors/sensors.c \
+	debug_mode/ui/scroll/scroll.c \
+	debug_mode/ui/selector/selector.c \
+	debug_mode/ui/text_scroll/text_scroll.c \
+	debug_mode/variables/variables.c \
+	debug_mode/debug_mode.c \
 	)
 
 # Drivers of the board's machine module (ports/esp32/esp32_common.cmake)

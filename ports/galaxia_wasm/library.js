@@ -37,21 +37,86 @@ addToLibrary({
         return 1;
     },
 
+    // A program uploaded by the page, written straight into the flash (main.c) at the
+    // soft reset it asks for: Module.galaxia.upload = {files: [{path, data}], main,
+    // requested}. requested: returns 1 once per upload.
+    galaxia_js_upload_requested: () => {
+        const u = Module.galaxia.upload;
+        if (!u || !u.requested) {
+            return 0;
+        }
+        u.requested = false;
+        return 1;
+    },
+    galaxia_js_upload_count: () => (Module.galaxia.upload ? Module.galaxia.upload.files.length : 0),
+    // Path of file i (i < 0: the file to execute)
+    galaxia_js_upload_path__deps: ["$stringToUTF8"],
+    galaxia_js_upload_path: (i, ptr, len) => {
+        const u = Module.galaxia.upload;
+        stringToUTF8(i < 0 ? u.main || "" : u.files[i].path, ptr, len);
+    },
+    galaxia_js_upload_size: (i) => Module.galaxia.upload.files[i].data.length,
+    galaxia_js_upload_data: (i, ptr) => HEAPU8.set(Module.galaxia.upload.files[i].data, ptr),
+    galaxia_js_upload_done: (ok) => {
+        Module.galaxia.upload = null;
+        Module.galaxia.uploaded && Module.galaxia.uploaded(!!ok);
+    },
+
+    // Inputs of the page (buttons, touch pads) with the time it saw them:
+    // Module.galaxia.inputs = [{kind: "gpio" | "touch", id, value, t}]. They reach the
+    // firmware in order and as far apart as on the page, even when the Worker was too
+    // busy to take them as they came: a 100 ms click stays a 100 ms pulse for the
+    // firmware (its debounce timers see it pressed).
+    $galaxiaApplyInputs: () => {
+        const g = Module.galaxia;
+        const q = g.inputs;
+        if (!q) {
+            return;
+        }
+        const now = performance.now();
+        while (q.length) {
+            const e = q[0];
+            const last = g.inputApplied;
+            if (last && e.t - last.t > now - last.at) {
+                return;         // not yet: as long after the previous one as on the page
+            }
+            q.shift();
+            g.inputApplied = { t: e.t, at: now };
+            if (e.kind === "gpio") {
+                g.gpio[e.id] = e.value;
+                g.gpioChanged.push(e.id);
+            } else {
+                g.touch[e.id] = e.value;
+                g.touchChanged.push(e.id);
+            }
+        }
+    },
+
     // Level of a GPIO input set by the page (buttons are active low: 1 = released)
+    galaxia_js_gpio_get__deps: ["$galaxiaApplyInputs"],
     galaxia_js_gpio_get: (pin) => {
+        galaxiaApplyInputs();
         const v = Module.galaxia.gpio[pin];
         return v === undefined ? -1 : v;     // -1: the page does not drive this pad
     },
 
     // Next GPIO whose level the page changed (edge for the interrupt handlers), or -1
+    galaxia_js_gpio_next_changed__deps: ["$galaxiaApplyInputs"],
     galaxia_js_gpio_next_changed: () => {
+        galaxiaApplyInputs();
         const q = Module.galaxia.gpioChanged;
         return q.length ? q.shift() : -1;
     },
 
     // Touch pads: state set by the page (1 = touched), and the pads it changed
-    galaxia_js_touch_get: (pad) => (Module.galaxia.touch[pad] ? 1 : 0),
+    galaxia_js_touch_get__deps: ["$galaxiaApplyInputs"],
+    galaxia_js_touch_get: (pad) => {
+        galaxiaApplyInputs();
+        return Module.galaxia.touch[pad] ? 1 : 0;
+    },
+    galaxia_js_touch_next_changed__deps: ["$galaxiaApplyInputs"],
     galaxia_js_touch_next_changed: () => {
+        galaxiaApplyInputs();
         const q = Module.galaxia.touchChanged;
         return q.length ? q.shift() : -1;
     },

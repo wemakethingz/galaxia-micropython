@@ -7,6 +7,7 @@
 #include "py/runtime.h"
 #include "py/stream.h"
 #include "shared/runtime/interrupt_char.h"
+#include "shared/runtime/pyexec.h"
 #include "idf_shim.h"
 #include "mpthreadport.h"
 
@@ -39,24 +40,64 @@ void galaxia_note_yield(void) {
     last_yield = mp_js_ticks_ms();
 }
 
-void galaxia_poll(void) {
-    idf_shim_poll();
-    uint32_t now = mp_js_ticks_ms();
-    if (now - last_yield >= YIELD_PERIOD_MS) {
-        last_yield = now;
-        galaxia_js_sleep(0);
-        idf_shim_poll();
-        check_interrupt();
+// The page uploaded a program: as microcontroller.set_file_to_execute() does, the
+// running program stops (the REPL soft-resets) and the soft reset installs it (main.c)
+// The program stops and the board soft-resets, as the firmware does when the
+// computer writes to the USB key (msc_disk.c) or set_file_to_execute() is called
+void galaxia_restart_program(void) {
+    if (!pyexec_repl_active) {
+        mp_sched_reload_interrupt();
+    } else {
+        ringbuf_put(&stdin_ringbuf, 3);
+        ringbuf_put(&stdin_ringbuf, 4);
     }
 }
 
+static void check_upload(void) {
+    extern int galaxia_js_upload_requested(void);
+    if (galaxia_js_upload_requested()) {
+        galaxia_restart_program();
+    }
+}
+
+// The Worker's event loop gets a turn (the page's inputs) at least every
+// YIELD_PERIOD_MS: from the VM hook, and from the thread switches (mpthreadport.c),
+// where tasks and threads may keep each other busy without ever all sleeping.
+// Returns true if it had one.
+bool galaxia_yield_if_due(void) {
+    uint32_t now = mp_js_ticks_ms();
+    if (now - last_yield < YIELD_PERIOD_MS) {
+        return false;
+    }
+    last_yield = now;
+    galaxia_js_sleep(0);
+    return true;
+}
+
+void galaxia_poll(void) {
+    idf_shim_poll();
+    if (galaxia_yield_if_due()) {
+        idf_shim_poll();
+        check_interrupt();
+        check_upload();
+    }
+}
+
+static uint8_t stdin_ringbuf_array[260];
+ringbuf_t stdin_ringbuf = { stdin_ringbuf_array, sizeof(stdin_ringbuf_array), 0, 0 };
+
 int mp_hal_stdin_rx_chr(void) {
     for (;;) {
-        int c = galaxia_js_stdin_byte();
+        int c = ringbuf_get(&stdin_ringbuf);
+        if (c >= 0) {
+            return c;
+        }
+        c = galaxia_js_stdin_byte();
         if (c >= 0) {
             return c;
         }
         idf_shim_poll();
+        check_upload();
         mp_handle_pending(true);
         // Wake for the next timer (screen refresh every 80 ms) or a key; the other
         // threads run meanwhile (the board releases the GIL while it waits for input)
@@ -77,6 +118,7 @@ void mp_hal_delay_ms(mp_uint_t ms) {
     uint32_t start = mp_hal_ticks_ms();
     for (;;) {
         idf_shim_poll();
+        check_upload();
         mp_handle_pending(true);
         uint32_t elapsed = mp_hal_ticks_ms() - start;
         if (elapsed >= ms) {
@@ -135,7 +177,7 @@ uint64_t mp_hal_time_ns(void) {
 uintptr_t mp_hal_stdio_poll(uintptr_t poll_flags) {
     extern int galaxia_js_stdin_available(void);
     uintptr_t ret = 0;
-    if ((poll_flags & MP_STREAM_POLL_RD) && galaxia_js_stdin_available()) {
+    if ((poll_flags & MP_STREAM_POLL_RD) && (galaxia_js_stdin_available() || ringbuf_avail(&stdin_ringbuf))) {
         ret |= MP_STREAM_POLL_RD;
     }
     if (poll_flags & MP_STREAM_POLL_WR) {

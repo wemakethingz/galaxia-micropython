@@ -26,6 +26,12 @@ These parts are the firmware's own code, compiled unchanged:
   `machine_touchpad.c`, `machine_bitstream.c`, `machine_wdt.c`, `modtime.c`), with
   SoftI2C, SoftSPI, `time_pulse_us`, `dht_readinto`; thingz_led's PWM objects are
   machine's, as on the board;
+- the system menu (`debug_mode/`: SYSTEME button on GPIO0, last error, file to
+  execute, variables, buttons, LED, sensors, restart), its FreeRTOS task a fiber like
+  the drivers' (`reboot.c` through `debug_mode_reboot.c`: no USB device to detach);
+- `microcontroller` (`modmicrocontroller.c`, through `microcontroller.c`), which the
+  programming page uses to choose the file to execute (`set_file_to_execute`, kept in
+  NVS) and restart the program;
 - the firmware's frozen modules that can run here (`manifest.py`): `supervisor`,
   `asyncio`, `umqtt.simple`/`umqtt.robust`, `requests`/`urequests`, `mip`, `ntptime`,
   `upysh`, `dht`, `ds18x20`, `neopixel`, `onewire`;
@@ -36,7 +42,7 @@ These parts are simulated:
 
 | Board | Simulation |
 |---|---|
-| FreeRTOS, `esp_timer`, GPIO (`idf_shim.c`) | one thread; timers run from the VM hook, from sleeps and while the REPL waits |
+| FreeRTOS, `esp_timer`, GPIO (`idf_shim.c`) | one thread; timers run from the main thread's VM hook, sleeps and REPL wait (never on a `_thread`'s stack: `test/thread_timers.mjs`); a task waiting on a queue is blocked until a send or its timeout |
 | FreeRTOS tasks of `_thread` (`mpthreadport.c`) | Emscripten fibers (a C stack each, switched by Asyncify) at the board's switch points |
 | ST7735 screen on SPI (`st7735.c`) | the galaxia_sim QEMU model, without QEMU |
 | I2C0 of a PCB 1.0.9: LIS2DH12, LIS2MDL, settings EEPROM (`peripherals.c`) | register models (the LIS2DH12 one from QEMU) |
@@ -48,7 +54,10 @@ These parts are simulated:
 | SPIFFS (log) | Emscripten file system, `/spiffs` |
 
 The page (`web/`) runs the board in a Web Worker and provides:
-- the screen, the LED, the A/B buttons (also keys A and B) and the N/S/E/W touch pads;
+- the screen, the LED, the A/B buttons (also keys A and B), the SYSTEME button and the
+  N/S/E/W touch pads. Their changes carry the page's time and reach the firmware as
+  far apart as they were made (`library.js`), even when the Worker is busy: a short
+  click stays a pulse its debounce timers see;
 - sensors: tilt and shake, compass heading, chip temperature, light level;
 - the sound, through WebAudio: the DAC waveform, a looped table or WAV samples;
 - the radio between the boards open in tabs of the same browser (`BroadcastChannel`);
@@ -60,6 +69,11 @@ The page (`web/`) runs the board in a Web Worker and provides:
   Locks); every tab shows its log and can publish;
 - the REPL, and "Exécuter", which writes `main.py` through the raw REPL and then
   soft-resets the board;
+- an upload as the programming page's (worker message `upload`: files and the file to
+  execute), written straight into the flash: it stops the running program as
+  `microcontroller.set_file_to_execute()` does (`ReloadInterrupt`, or Ctrl-C Ctrl-D in
+  the REPL), and the soft reset writes the files after mounting the FAT partition
+  (`main.c`) before running the program (thingz-front's simulator uses it);
 - the board's files, kept in IndexedDB. A firmware crash reboots the board with its
   files, as on the board.
 

@@ -34,6 +34,7 @@ typedef int esp_err_t;
 #define ESP_ERROR_CHECK(x) do { (void)(x); } while (0)
 // sdkconfig of the Galaxia
 #define CONFIG_IDF_TARGET_ESP32S2 1
+#define CONFIG_FREERTOS_UNICORE 1
 
 #define IRAM_ATTR
 #define DMA_ATTR

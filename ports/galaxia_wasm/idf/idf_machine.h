@@ -141,7 +141,10 @@ typedef uint8_t StackType_t;      // stack depths are in bytes in ESP-IDF
 BaseType_t xTaskCreatePinnedToCore(TaskFunction_t fn, const char *name, uint32_t stack_depth, void *arg,
     UBaseType_t priority, TaskHandle_t *created_task, BaseType_t core_id);
 void vTaskDelete(TaskHandle_t task);
-#define MP_TASK_COREID 0
+#define tskNO_AFFINITY 0x7FFFFFFF
+#define xTaskCreate(fn, name, depth, arg, priority, handle) \
+    xTaskCreatePinnedToCore(fn, name, depth, arg, priority, handle, tskNO_AFFINITY)
+#define MP_TASK_COREID (0)        // CONFIG_FREERTOS_UNICORE: the ESP32-S2 has one core
 #define taskYIELD() ((void)0)
 
 // ---- general purpose timers (hal/timer_ll.h) ----
