@@ -64,10 +64,13 @@ addToLibrary({
 
     // Inputs of the page (buttons, touch pads) with the time it saw them:
     // Module.galaxia.inputs = [{kind: "gpio" | "touch", id, value, t}]. They reach the
-    // firmware in order and as far apart as on the page, even when the Worker was too
-    // busy to take them as they came: a 100 ms click stays a 100 ms pulse for the
-    // firmware (its debounce timers see it pressed).
+    // firmware in order and as far apart as on the page, up to INPUT_SPACING_MS, even
+    // when the Worker was too busy to take them as they came: a 100 ms click stays a
+    // 100 ms pulse for the firmware (its debounce timers, 50 ms, see it pressed).
+    // Longer gaps are not waited out again: an input taken late does not delay all
+    // the ones after it.
     $galaxiaApplyInputs: () => {
+        const INPUT_SPACING_MS = 100;
         const g = Module.galaxia;
         const q = g.inputs;
         if (!q) {
@@ -77,7 +80,7 @@ addToLibrary({
         while (q.length) {
             const e = q[0];
             const last = g.inputApplied;
-            if (last && e.t - last.t > now - last.at) {
+            if (last && Math.min(e.t - last.t, INPUT_SPACING_MS) > now - last.at) {
                 return;         // not yet: as long after the previous one as on the page
             }
             q.shift();

@@ -65,8 +65,8 @@ const galaxia = {
     radioIn: [],
     wake: null,
     wakeTimer: null,
-    ready: () => postMessage({ type: "ready" }),
-    stdout: (bytes) => postMessage({ type: "out", data: bytes }, [bytes.buffer]),
+    ready: () => (flushOut(), postMessage({ type: "ready" })),
+    stdout: (bytes) => stdout(bytes),
     screen: (rgba, width, height) => {
         const data = new Uint8ClampedArray(rgba.buffer);
         postMessage({ type: "screen", data, width, height }, [data.buffer]);
@@ -80,9 +80,44 @@ const galaxia = {
     hosts: {},                  // their router's DNS: name -> [a, b, c, d]
     reset: (reason, wake, sleepMs) => reset(reason, wake, sleepMs),
     upload: null,               // a program the page sent (library.js)
-    uploaded: (ok) => postMessage({ type: "uploaded", ok }),
+    uploaded: (ok) => (flushOut(), postMessage({ type: "uploaded", ok })),
     boot: null,                 // what the previous run left (bootInfo)
 };
+
+// REPL output, as the USB sends it: in packets. The firmware writes a few bytes at a
+// time (a print is its text, then "\r\n"); a message each, a program printing in a
+// loop sends the page more than it can take, and the page falls seconds behind. The
+// pieces go together, every OUT_EVERY_MS or OUT_MAX bytes.
+const OUT_EVERY_MS = 16;
+const OUT_MAX = 64 * 1024;
+let out = [], outBytes = 0, outTimer = null;
+
+function stdout(bytes) {
+    out.push(bytes);
+    outBytes += bytes.length;
+    if (outBytes >= OUT_MAX) {
+        flushOut();
+    } else if (!outTimer) {
+        outTimer = setTimeout(flushOut, OUT_EVERY_MS);
+    }
+}
+
+function flushOut() {
+    clearTimeout(outTimer);
+    outTimer = null;
+    if (!outBytes) {
+        return;
+    }
+    const data = new Uint8Array(outBytes);
+    let at = 0;
+    for (const piece of out) {
+        data.set(piece, at);
+        at += piece.length;
+    }
+    out = [];
+    outBytes = 0;
+    postMessage({ type: "out", data }, [data.buffer]);
+}
 
 radio.onmessage = (e) => {
     galaxia.radioIn.push(e.data);
@@ -141,6 +176,7 @@ function crashed(reason) {
     ended = true;
     const state = boardState();
     state.boot = bootInfo(ESP_RST_PANIC);
+    flushOut();                         // what it printed last, before it goes
     postMessage({ type: "crash", reason: String(reason), state }, transfers(state));
     close();
 }
@@ -154,6 +190,7 @@ function reset(reason, wake, sleepMs) {
     ended = true;
     const state = boardState();
     state.boot = bootInfo(reason, wake);
+    flushOut();
     postMessage({ type: "reset", state, sleepMs }, transfers(state));
     close();
 }
