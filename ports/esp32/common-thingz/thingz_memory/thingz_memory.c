@@ -51,7 +51,10 @@ int32_t thingz_memory_read_eeprom(uint16_t addr, uint8_t* value){
 }
 
 int32_t thingz_memory_write_eeprom(uint16_t addr, uint8_t value){
-    return common_thingz_i2c_write(THINGZ_MEMORY_EEPROM_ADDR, 0, addr,  &value, 1);
+    esp_err_t err = common_thingz_i2c_write(THINGZ_MEMORY_EEPROM_ADDR, 0, addr,  &value, 1);
+    //The eeprom NACKs everything during its write cycle
+    vTaskDelay(pdMS_TO_TICKS(10));
+    return err;
 }
 
 int32_t thingz_memory_read_array_eeprom(uint16_t addr, uint8_t* value, uint8_t len){

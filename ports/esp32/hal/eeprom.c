@@ -184,6 +184,12 @@ static int _thingz_memory_migrate(void){
     }else if(err == ESP_OK){
         //backup found
         uint8_t settings[eeprom_backup_len];
+        size_t backup_len = eeprom_backup_len;
+
+        if(nvs_get_blob(*nvsHandle, "erom_bkup", settings, &backup_len) != ESP_OK || backup_len != eeprom_backup_len){
+            //Failed migration, cannot read previously stored backup eeprom
+            return -1;
+        }
 
         for(int i = 0; i < eeprom_backup_len; i++){
             if(thingz_memory_write_eeprom(i+EEPROM_V1_VERSION, settings[i]) == -1){
