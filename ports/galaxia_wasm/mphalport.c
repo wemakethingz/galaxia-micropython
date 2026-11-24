@@ -24,6 +24,8 @@ mp_uint_t thingz_screen_repl_write_from_hal(const char *str, size_t len);
 #define YIELD_PERIOD_MS 20
 
 static uint32_t last_yield;
+// The event loop had a turn since the last checks: a Ctrl-C or a program may have come
+static bool had_turn;
 
 static void check_interrupt(void) {
     // Ctrl-C typed while a program runs (the REPL reads the other bytes later)
@@ -38,6 +40,7 @@ static void check_interrupt(void) {
 // thread)
 void galaxia_note_yield(void) {
     last_yield = mp_js_ticks_ms();
+    had_turn = true;
 }
 
 // The page uploaded a program: as microcontroller.set_file_to_execute() does, the
@@ -74,9 +77,12 @@ bool galaxia_yield_if_due(void) {
     return true;
 }
 
+// The checks follow any turn of the event loop: a blocking call that sleeps between
+// its polls (a socket's accept or recv, net.c) gives it turns without ever being due
 void galaxia_poll(void) {
     idf_shim_poll();
-    if (galaxia_yield_if_due()) {
+    if (galaxia_yield_if_due() || had_turn) {
+        had_turn = false;
         idf_shim_poll();
         check_interrupt();
         check_upload();
